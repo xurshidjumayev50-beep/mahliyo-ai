@@ -1,6 +1,6 @@
 /* ============================================================
-   MAHLIYO AI — PREMIUM MIDNIGHT BLUE THEME
-   Accurately matches uploaded design specifications
+   MAHLIYO AI — PREMIUM MIDNIGHT BLUE THEME v1.1
+   With Slide PPTX, Word DOCX, and Voice Message support
    ============================================================ */
 
 :root {
@@ -16,6 +16,9 @@
   --color-primary-dark: #2bb3a0;
   --color-primary-text: #06221e;
   
+  --color-word-blue: #2b579a;     /* Word signature blue */
+  --color-powerpoint: #d24726;    /* PPT signature orange */
+
   --color-moon: #fff3d1;
   --color-moon-glow: rgba(253, 224, 71, 0.35);
 
@@ -24,6 +27,7 @@
   --text-dim: #64748b;
 
   --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-word: 'Tinos', 'Times New Roman', Times, serif;
   --font-mono: 'JetBrains Mono', monospace;
   
   --sidebar-width: 270px;
@@ -117,7 +121,7 @@ body {
 
 /* Action: + Yangi suhbat */
 .sidebar-action {
-  padding: 8px 16px 18px 16px;
+  padding: 8px 16px 10px 16px;
 }
 
 .btn-new-chat {
@@ -144,8 +148,37 @@ body {
   box-shadow: 0 6px 18px rgba(60, 203, 183, 0.35);
 }
 
-.btn-new-chat:active {
-  transform: translateY(0);
+/* Quick Tools */
+.sidebar-quick-tools {
+  padding: 0 16px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btn-quick-tool {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.btn-quick-tool:hover {
+  background: rgba(60, 203, 183, 0.1);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.tool-icon {
+  font-size: 15px;
 }
 
 /* Section Title */
@@ -189,11 +222,9 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-speed) ease;
-  text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  position: relative;
 }
 
 .history-item:hover {
@@ -367,7 +398,23 @@ body {
 .chat-current-title {
   font-size: 14px;
   font-weight: 600;
-  color: #94a3b8;
+  color: #ffffff;
+}
+
+.top-bar-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-feature {
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 12px;
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .top-bar-actions {
@@ -397,7 +444,7 @@ body {
 }
 
 /* ============================================================
-   CHAT VIEWPORT & HERO SECTION (Exactly like Screenshot)
+   CHAT VIEWPORT & HERO SECTION (Matching Screenshot)
    ============================================================ */
 .chat-viewport {
   flex: 1;
@@ -470,7 +517,7 @@ body {
   margin-bottom: 36px;
 }
 
-/* Prompt Cards Grid (2x2 as in Screenshot) */
+/* Prompt Cards Grid */
 .prompt-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -511,7 +558,7 @@ body {
 }
 
 /* ============================================================
-   ACTIVE CHAT MESSAGES
+   ACTIVE CHAT MESSAGES & EMBEDDED ARTIFACTS
    ============================================================ */
 .messages-container {
   max-width: 860px;
@@ -564,7 +611,7 @@ body {
 }
 
 .message-bubble {
-  max-width: 82%;
+  max-width: 85%;
   line-height: 1.6;
   font-size: 15px;
   border-radius: 16px;
@@ -588,12 +635,8 @@ body {
 }
 
 /* Message Markdown Content */
-.message-bubble p {
-  margin-bottom: 12px;
-}
-.message-bubble p:last-child {
-  margin-bottom: 0;
-}
+.message-bubble p { margin-bottom: 12px; }
+.message-bubble p:last-child { margin-bottom: 0; }
 .message-bubble h1, .message-bubble h2, .message-bubble h3 {
   color: #ffffff;
   margin: 16px 0 8px 0;
@@ -607,9 +650,7 @@ body {
   padding-left: 20px;
   margin-bottom: 12px;
 }
-.message-bubble li {
-  margin-bottom: 4px;
-}
+.message-bubble li { margin-bottom: 4px; }
 
 .message-bubble blockquote {
   border-left: 3px solid var(--color-primary);
@@ -647,12 +688,121 @@ body {
   background: transparent !important;
 }
 
+/* ============================================================
+   EMBEDDED ARTIFACT CARDS (Presentation & Word Doc)
+   ============================================================ */
+.artifact-card {
+  margin-top: 14px;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.artifact-card.presentation {
+  background: linear-gradient(135deg, rgba(210, 71, 38, 0.15) 0%, rgba(24, 27, 70, 0.9) 100%);
+  border: 1.5px solid rgba(210, 71, 38, 0.4);
+}
+
+.artifact-card.document {
+  background: linear-gradient(135deg, rgba(43, 87, 154, 0.2) 0%, rgba(24, 27, 70, 0.9) 100%);
+  border: 1.5px solid rgba(43, 87, 154, 0.45);
+}
+
+.artifact-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.artifact-badge-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.artifact-card.presentation .artifact-badge-icon {
+  background-color: var(--color-powerpoint);
+}
+
+.artifact-card.document .artifact-badge-icon {
+  background-color: var(--color-word-blue);
+}
+
+.artifact-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.artifact-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-artifact-view {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-speed);
+}
+
+.btn-artifact-view:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #ffffff;
+}
+
+.btn-artifact-download {
+  background-color: var(--color-primary);
+  color: var(--color-primary-text);
+  border: none;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all var(--transition-speed);
+}
+
+.btn-artifact-download:hover {
+  background-color: var(--color-primary-dark);
+}
+
 /* Message action bar */
 .msg-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
 .btn-msg-action {
@@ -664,14 +814,20 @@ body {
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: color var(--transition-speed);
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: all var(--transition-speed);
 }
 
 .btn-msg-action:hover {
   color: var(--color-primary);
   background: rgba(255, 255, 255, 0.04);
+}
+
+.btn-msg-action.playing {
+  color: #38ef7d;
+  background: rgba(56, 239, 125, 0.15);
+  font-weight: 600;
 }
 
 /* Thinking Indicator */
@@ -735,7 +891,7 @@ body {
 }
 
 /* ============================================================
-   BOTTOM CHAT FOOTER & INPUT BAR
+   BOTTOM CHAT FOOTER & VOICE RECORDING
    ============================================================ */
 .chat-footer {
   width: 100%;
@@ -744,6 +900,47 @@ body {
   padding: 0 20px 18px 20px;
   position: relative;
   z-index: 20;
+}
+
+/* Voice Recording Active Banner */
+.voice-recording-banner {
+  background: linear-gradient(90deg, #7f1d1d 0%, #1e1b4b 100%);
+  border: 1px solid #ef4444;
+  border-radius: 12px;
+  padding: 8px 16px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  animation: fadeIn 0.2s ease;
+}
+
+.voice-pulse-ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  animation: pulse 1s infinite;
+}
+
+.voice-status-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  flex: 1;
+  margin-left: 10px;
+}
+
+.btn-stop-voice {
+  background: #ef4444;
+  border: none;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 /* File preview chip */
@@ -810,6 +1007,13 @@ body {
   background-color: rgba(255, 255, 255, 0.08);
 }
 
+.btn-mic.recording {
+  background-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+  animation: pulse 1s infinite;
+}
+
 .chat-textarea {
   flex: 1;
   background: none;
@@ -854,20 +1058,281 @@ body {
   transform: scale(0.96);
 }
 
-.btn-send:disabled {
-  background-color: #243048;
-  color: #4b5563;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
 /* Disclaimer text */
 .disclaimer-text {
   text-align: center;
   font-size: 12px;
   color: var(--text-dim);
   margin-top: 10px;
+}
+
+/* ============================================================
+   WORD DOCUMENT VIEWER MODAL (Real A4 Sheet Preview)
+   ============================================================ */
+.word-modal-card {
+  max-width: 880px;
+  height: 90vh;
+}
+
+.word-modal-header {
+  background-color: #1e2456;
+}
+
+.word-badge-icon {
+  background-color: var(--color-word-blue);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.word-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-download-word {
+  background-color: var(--color-word-blue);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity var(--transition-speed);
+}
+
+.btn-download-word:hover {
+  opacity: 0.9;
+}
+
+.btn-print-word {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.word-viewer-body {
+  flex: 1;
+  background-color: #525659; /* Classic PDF/Word canvas grey */
+  padding: 30px 20px;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+/* The A4 Paper Page */
+.word-doc-paper {
+  background-color: #ffffff;
+  color: #000000;
+  width: 100%;
+  max-width: 760px;
+  min-height: 1000px;
+  padding: 70px 60px 70px 80px; /* 3cm left margin simulation */
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-word);
+  line-height: 1.5;
+  font-size: 14pt;
+}
+
+.word-header-center {
+  text-align: center;
+  font-size: 12.5pt;
+  line-height: 1.3;
+  margin-bottom: 50px;
+}
+
+.word-title-block {
+  text-align: center;
+  margin: 60px 0 70px 0;
+}
+
+.word-doc-main-title {
+  font-size: 24pt;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 20px;
+}
+
+.word-subject {
+  font-size: 14pt;
+  margin-bottom: 8px;
+}
+
+.word-topic {
+  font-size: 16pt;
+  font-weight: 700;
+}
+
+.word-student-info {
+  text-align: right;
+  margin: 70px 0 80px 0;
+  font-size: 13pt;
+  line-height: 1.4;
+}
+
+.word-footer-center {
+  text-align: center;
+  margin-top: 80px;
+  font-size: 13pt;
+  font-weight: 700;
+}
+
+.word-page-separator {
+  border: 0;
+  border-top: 2px dashed #999999;
+  margin: 50px 0;
+}
+
+.word-section-title {
+  text-align: center;
+  font-size: 15pt;
+  font-weight: 700;
+  margin: 30px 0 16px 0;
+  text-transform: uppercase;
+}
+
+.word-doc-paper p {
+  text-indent: 1.25cm;
+  text-align: justify;
+  margin-bottom: 12px;
+}
+
+.word-reja-list, .word-sources-list {
+  padding-left: 30px;
+  line-height: 1.6;
+  font-size: 13pt;
+}
+
+/* ============================================================
+   SLIDE CAROUSEL VIEWER MODAL
+   ============================================================ */
+.slide-modal-card {
+  max-width: 900px;
+}
+
+.slide-badge-icon {
+  background-color: var(--color-powerpoint);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slide-viewer-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+/* 16:9 Slide Canvas */
+.slide-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #0f1233;
+  border: 2px solid var(--border-highlight);
+  border-radius: 14px;
+  padding: 36px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.slide-canvas h2 {
+  font-size: 28px;
+  color: var(--color-primary);
+  margin-bottom: 18px;
+  font-weight: 800;
+}
+
+.slide-canvas ul {
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.slide-canvas li {
+  font-size: 18px;
+  color: #ffffff;
+  line-height: 1.45;
+}
+
+.slide-title-view {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.slide-title-view h1 {
+  font-size: 32px;
+  color: #ffffff;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.slide-title-view p {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.slide-title-view .slide-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 24px;
+}
+
+.slide-nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.slide-nav-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: #ffffff;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.slide-nav-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--color-primary);
+}
+
+.slide-counter {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 /* ============================================================
@@ -1121,5 +1586,10 @@ body {
 
   .message-bubble {
     max-width: 90%;
+  }
+
+  .word-doc-paper {
+    padding: 30px 20px;
+    font-size: 12pt;
   }
 }

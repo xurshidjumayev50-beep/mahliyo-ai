@@ -28,6 +28,8 @@ wheels/
 *.sqlite3
 .env
 .env.local
+static/generated/*.docx
+static/generated/*.pptx
 
 # IDEs
 .idea/

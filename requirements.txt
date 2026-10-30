@@ -4,3 +4,5 @@ google-genai==2.31.0
 requests==2.34.2
 python-dotenv==1.2.4
 gunicorn==26.2.0
+python-pptx==1.0.2
+python-docx==1.2.0

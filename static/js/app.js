@@ -1,6 +1,7 @@
 /**
- * Mahliyo AI — Front-End Application Logic
- * Implements real-time chat, streaming, Markdown parsing, and persistence.
+ * Mahliyo AI — Front-End Application Logic v1.1
+ * Features: Real-time chat, Voice Recognition, Speech Synthesis,
+ * PPTX Slide Deck Generator & Viewer, Word DOCX Mustaqil Ish Viewer.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -9,18 +10,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const welcomeHero = document.getElementById('welcomeHero');
   const messagesContainer = document.getElementById('messagesContainer');
   const thinkingBubble = document.getElementById('thinkingBubble');
+  const thinkingStatusText = document.getElementById('thinkingStatusText');
   
   const chatForm = document.getElementById('chatForm');
   const messageInput = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendBtn');
+  const micBtn = document.getElementById('micBtn');
   const attachmentBtn = document.getElementById('attachmentBtn');
   const fileInput = document.getElementById('fileInput');
   const filePreviewBar = document.getElementById('filePreviewBar');
   const attachedFileName = document.getElementById('attachedFileName');
   const removeAttachmentBtn = document.getElementById('removeAttachmentBtn');
+  const voiceRecordingBanner = document.getElementById('voiceRecordingBanner');
+  const stopVoiceBtn = document.getElementById('stopVoiceBtn');
 
   const newChatBtn = document.getElementById('newChatBtn');
   const mobileNewChatBtn = document.getElementById('mobileNewChatBtn');
+  const quickSlideBtn = document.getElementById('quickSlideBtn');
+  const quickDocBtn = document.getElementById('quickDocBtn');
   const clearChatBtn = document.getElementById('clearChatBtn');
   const chatHistoryList = document.getElementById('chatHistoryList');
   const currentChatTitle = document.getElementById('currentChatTitle');
@@ -28,6 +35,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileMenuBtn = document.getElementById('mobileMenuBtn');
   const sidebar = document.getElementById('sidebar');
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+
+  // Word Document Viewer Modal
+  const wordViewerModal = document.getElementById('wordViewerModal');
+  const wordModalTitle = document.getElementById('wordModalTitle');
+  const wordModalDownloadBtn = document.getElementById('wordModalDownloadBtn');
+  const wordModalPrintBtn = document.getElementById('wordModalPrintBtn');
+  const closeWordModalBtn = document.getElementById('closeWordModalBtn');
+  const wordViewerBody = document.getElementById('wordViewerBody');
+
+  // Slide Viewer Modal
+  const slideViewerModal = document.getElementById('slideViewerModal');
+  const slideModalTitle = document.getElementById('slideModalTitle');
+  const slideModalDownloadBtn = document.getElementById('slideModalDownloadBtn');
+  const closeSlideModalBtn = document.getElementById('closeSlideModalBtn');
+  const slideCanvas = document.getElementById('slideCanvas');
+  const prevSlideBtn = document.getElementById('prevSlideBtn');
+  const nextSlideBtn = document.getElementById('nextSlideBtn');
+  const slideCounter = document.getElementById('slideCounter');
 
   // Settings Modal elements
   const openSettingsBtn = document.getElementById('openSettingsBtn');
@@ -48,6 +73,89 @@ document.addEventListener('DOMContentLoaded', () => {
   let conversations = [];
   let attachedFile = null;
   let isGenerating = false;
+  let isRecordingVoice = false;
+  let speechRecognition = null;
+  let currentSpeakingUtterance = null;
+
+  // Active slide deck state
+  let currentSlideDeck = [];
+  let currentSlideIndex = 0;
+
+  // --- Speech Recognition Setup ---
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognitionAPI) {
+    speechRecognition = new SpeechRecognitionAPI();
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+    speechRecognition.lang = 'uz-UZ';
+
+    speechRecognition.onstart = () => {
+      isRecordingVoice = true;
+      micBtn.classList.add('recording');
+      voiceRecordingBanner.style.display = 'flex';
+    };
+
+    speechRecognition.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        messageInput.value = (messageInput.value + ' ' + finalTranscript).trim();
+      } else if (interimTranscript) {
+        messageInput.placeholder = interimTranscript;
+      }
+      messageInput.style.height = 'auto';
+      messageInput.style.height = Math.min(messageInput.scrollHeight, 160) + 'px';
+    };
+
+    speechRecognition.onerror = (event) => {
+      console.warn("Nutqni aniqlash xatosi:", event.error);
+      stopVoiceRecording();
+    };
+
+    speechRecognition.onend = () => {
+      stopVoiceRecording();
+    };
+  }
+
+  function toggleVoiceRecording() {
+    if (!speechRecognition) {
+      alert("Brauzeringizda ovozni aniqlash (Speech Recognition) qo'llab-quvvatlanmaydi. Chrome yoki Edge brauzeridan foydalaning.");
+      return;
+    }
+
+    if (isRecordingVoice) {
+      speechRecognition.stop();
+      stopVoiceRecording();
+    } else {
+      try {
+        speechRecognition.start();
+      } catch (err) {
+        console.error("Mic start error:", err);
+      }
+    }
+  }
+
+  function stopVoiceRecording() {
+    isRecordingVoice = false;
+    micBtn.classList.remove('recording');
+    voiceRecordingBanner.style.display = 'none';
+    messageInput.placeholder = "Mahliyo'ga yozing yoki ovoz bilan ayting...";
+  }
+
+  micBtn.addEventListener('click', toggleVoiceRecording);
+  stopVoiceBtn.addEventListener('click', () => {
+    if (speechRecognition) speechRecognition.stop();
+    stopVoiceRecording();
+  });
 
   // --- Seed Initial Conversations (matching screenshot) ---
   const defaultSeeds = [
@@ -109,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
       modelStatusTag.textContent = model.replace('gemini-', 'Gemini ').split('-')[0] + ' (Faol)';
       modelStatusTag.style.color = 'var(--color-primary)';
     } else {
-      modelStatusTag.textContent = 'Lokal rejim';
+      modelStatusTag.textContent = 'Mahliyo v1.1';
       modelStatusTag.style.color = 'var(--text-dim)';
     }
   }
@@ -171,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chat.messages && chat.messages.length > 0) {
       welcomeHero.style.display = 'none';
       messagesContainer.innerHTML = '';
-      chat.messages.forEach(msg => appendMessageDOM(msg.role, msg.content));
+      chat.messages.forEach(msg => appendMessageDOM(msg.role, msg.content, msg.artifact));
       scrollChatToBottom();
     } else {
       startNewChat();
@@ -201,17 +309,82 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Message DOM Rendering ---
-  function appendMessageDOM(role, text) {
+  function appendMessageDOM(role, text, artifact = null) {
     const row = document.createElement('div');
     row.className = `message-row ${role}`;
 
     if (role === 'assistant') {
+      let artifactHtml = '';
+
+      if (artifact) {
+        if (artifact.type === 'presentation') {
+          artifactHtml = `
+            <div class="artifact-card presentation">
+              <div class="artifact-info">
+                <div class="artifact-badge-icon">P</div>
+                <div>
+                  <div class="artifact-title">📊 Taqdimot Slaydi (.pptx)</div>
+                  <div class="artifact-subtitle">${escapeHtml(artifact.topic || 'Slayd')}</div>
+                </div>
+              </div>
+              <div class="artifact-actions">
+                <button type="button" class="btn-artifact-view view-slide-btn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  Ko'rish
+                </button>
+                <a href="${artifact.file_url}" class="btn-artifact-download" download>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  PPTX Yuklab olish
+                </a>
+              </div>
+            </div>
+          `;
+        } else if (artifact.type === 'document') {
+          artifactHtml = `
+            <div class="artifact-card document">
+              <div class="artifact-info">
+                <div class="artifact-badge-icon">W</div>
+                <div>
+                  <div class="artifact-title">📝 Mustaqil Ish Hujjati (.docx)</div>
+                  <div class="artifact-subtitle">${escapeHtml(artifact.topic || 'Mustaqil ish')} • OTM Standarti</div>
+                </div>
+              </div>
+              <div class="artifact-actions">
+                <button type="button" class="btn-artifact-view view-doc-btn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  O'qish
+                </button>
+                <a href="${artifact.file_url}" class="btn-artifact-download" download>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  DOCX Yuklab olish
+                </a>
+              </div>
+            </div>
+          `;
+        }
+      }
+
       row.innerHTML = `
         <div class="msg-avatar bot">
           <img src="/static/images/logo.svg" alt="Mahliyo">
         </div>
         <div class="message-bubble">
           <div class="msg-body">${formatMarkdown(text)}</div>
+          ${artifactHtml}
           <div class="msg-actions">
             <button class="btn-msg-action copy-msg-btn">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -225,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                 <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
               </svg>
-              O'qish
+              <span>Ovozli eshitish</span>
             </button>
           </div>
         </div>
@@ -249,8 +422,27 @@ document.addEventListener('DOMContentLoaded', () => {
       // TTS (Speech synthesis) button
       const ttsBtn = row.querySelector('.tts-msg-btn');
       ttsBtn.addEventListener('click', () => {
-        speakText(text);
+        speakText(text, ttsBtn);
       });
+
+      // Artifact view handlers
+      if (artifact) {
+        if (artifact.type === 'presentation') {
+          const viewSlideBtn = row.querySelector('.view-slide-btn');
+          if (viewSlideBtn) {
+            viewSlideBtn.addEventListener('click', () => {
+              openSlideModal(artifact);
+            });
+          }
+        } else if (artifact.type === 'document') {
+          const viewDocBtn = row.querySelector('.view-doc-btn');
+          if (viewDocBtn) {
+            viewDocBtn.addEventListener('click', () => {
+              openWordModal(artifact);
+            });
+          }
+        }
+      }
 
     } else {
       // User message
@@ -320,19 +512,161 @@ document.addEventListener('DOMContentLoaded', () => {
     chatViewport.scrollTop = chatViewport.scrollHeight;
   }
 
-  function speakText(text) {
-    if ('speechSynthesis' in window) {
+  // --- Text-to-Speech (Mahliyo's Voice) ---
+  function speakText(text, btnElement) {
+    if (!('speechSynthesis' in window)) {
+      alert("Brauzeringizda nutq sintezi qo'llab-quvvatlanmaydi.");
+      return;
+    }
+
+    if (window.speechSynthesis.speaking) {
       window.speechSynthesis.cancel();
-      // Strip markdown syntax
-      const clean = text.replace(/[#*`_~\[\]]/g, '');
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.lang = 'uz-UZ';
-      utter.rate = 1.0;
-      window.speechSynthesis.speak(utter);
+      if (btnElement) {
+        btnElement.classList.remove('playing');
+        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+      }
+      return;
+    }
+
+    // Strip markdown formatting symbols for natural reading
+    const clean = text.replace(/[#*`_~\[\]\(\)\>]/g, ' ').replace(/\n+/g, '. ');
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.lang = 'uz-UZ';
+    utter.rate = 1.0;
+    utter.pitch = 1.05;
+
+    // Pick a pleasant voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => v.lang.startsWith('uz') || v.lang.startsWith('tr') || v.lang.startsWith('ru'));
+    if (preferredVoice) utter.voice = preferredVoice;
+
+    if (btnElement) {
+      btnElement.classList.add('playing');
+      btnElement.querySelector('span').textContent = "To'xtatish";
+    }
+
+    utter.onend = () => {
+      if (btnElement) {
+        btnElement.classList.remove('playing');
+        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+      }
+    };
+
+    utter.onerror = () => {
+      if (btnElement) {
+        btnElement.classList.remove('playing');
+        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+      }
+    };
+
+    window.speechSynthesis.speak(utter);
+  }
+
+  // --- Modals for Word & Slides ---
+  function openWordModal(artifact) {
+    wordModalTitle.textContent = `Mustaqil Ish — ${artifact.topic || 'Word Hujjati'}`;
+    wordModalDownloadBtn.href = artifact.file_url;
+    wordViewerBody.innerHTML = artifact.html_preview || '<p>Hujjat yuklanmoqda...</p>';
+    wordViewerModal.style.display = 'flex';
+  }
+
+  closeWordModalBtn.addEventListener('click', () => {
+    wordViewerModal.style.display = 'none';
+  });
+
+  wordModalPrintBtn.addEventListener('click', () => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${wordModalTitle.textContent}</title>
+          <link rel="stylesheet" href="/static/css/style.css">
+          <style>
+            body { background: white !important; color: black !important; }
+            .word-doc-paper { box-shadow: none !important; width: 100% !important; padding: 20px !important; }
+          </style>
+        </head>
+        <body>
+          ${wordViewerBody.innerHTML}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 500);
+  });
+
+  function openSlideModal(artifact) {
+    currentSlideDeck = artifact.slides || [];
+    currentSlideIndex = 0;
+    slideModalTitle.textContent = `Taqdimot Slaydlari — ${artifact.topic || 'Slayd'}`;
+    slideModalDownloadBtn.href = artifact.file_url;
+    renderCurrentSlide();
+    slideViewerModal.style.display = 'flex';
+  }
+
+  function renderCurrentSlide() {
+    if (!currentSlideDeck || currentSlideDeck.length === 0) return;
+    const slide = currentSlideDeck[currentSlideIndex];
+    slideCounter.textContent = `${currentSlideIndex + 1} / ${currentSlideDeck.length}`;
+
+    if (slide.type === 'title') {
+      slideCanvas.innerHTML = `
+        <div class="slide-title-view">
+          <h1>${escapeHtml(slide.title)}</h1>
+          <p>${escapeHtml(slide.subtitle || '')}</p>
+          <div class="slide-meta">${escapeHtml(slide.author || '')} • ${escapeHtml(slide.date || '')}</div>
+        </div>
+      `;
+    } else {
+      const itemsHtml = (slide.items || []).map(it => `<li>${escapeHtml(it)}</li>`).join('');
+      const subHtml = slide.subtitle ? `<p style="color: var(--color-moon); margin-top: 14px; font-weight: bold;">${escapeHtml(slide.subtitle)}</p>` : '';
+      slideCanvas.innerHTML = `
+        <h2>${escapeHtml(slide.title)}</h2>
+        <ul>${itemsHtml}</ul>
+        ${subHtml}
+      `;
     }
   }
 
-  // --- Sending Message & Streaming API ---
+  prevSlideBtn.addEventListener('click', () => {
+    if (currentSlideIndex > 0) {
+      currentSlideIndex--;
+      renderCurrentSlide();
+    }
+  });
+
+  nextSlideBtn.addEventListener('click', () => {
+    if (currentSlideIndex < currentSlideDeck.length - 1) {
+      currentSlideIndex++;
+      renderCurrentSlide();
+    }
+  });
+
+  closeSlideModalBtn.addEventListener('click', () => {
+    slideViewerModal.style.display = 'none';
+  });
+
+  // --- Quick Tools in Sidebar ---
+  quickSlideBtn.addEventListener('click', () => {
+    const topic = prompt("Taqdimot (slayd) mavzusini kiriting:", "Sun'iy intellekt va uning istiqbollari");
+    if (topic && topic.trim()) {
+      messageInput.value = `Menga quyidagi mavzuda professional taqdimot (slayd) va .pptx fayl tayyorlab ber: ${topic.trim()}`;
+      handleSend();
+      closeMobileSidebar();
+    }
+  });
+
+  quickDocBtn.addEventListener('click', () => {
+    const topic = prompt("Mustaqil ish (Word .docx) mavzusini kiriting:", "Zamonaviy dasturlash tillari va ularning tahlili");
+    if (topic && topic.trim()) {
+      messageInput.value = `Menga OTM standarti bo'yicha to'liq mustaqil ish (Word .docx) yozib ber: ${topic.trim()}`;
+      handleSend();
+      closeMobileSidebar();
+    }
+  });
+
+  // --- Sending Message & Chat API ---
   async function handleSend() {
     const rawText = messageInput.value.trim();
     if (!rawText && !attachedFile) return;
@@ -376,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Show thinking bubble
     isGenerating = true;
+    thinkingStatusText.textContent = "Mahliyo javob tayyorlamoqda";
     thinkingBubble.style.display = 'flex';
     sendBtn.disabled = true;
     scrollChatToBottom();
@@ -402,8 +737,8 @@ document.addEventListener('DOMContentLoaded', () => {
       thinkingBubble.style.display = 'none';
 
       if (response.ok && data.reply) {
-        appendMessageDOM('assistant', data.reply);
-        currentChat.messages.push({ role: 'assistant', content: data.reply });
+        appendMessageDOM('assistant', data.reply, data.artifact);
+        currentChat.messages.push({ role: 'assistant', content: data.reply, artifact: data.artifact });
         saveConversations();
       } else {
         const errMsg = data.error || "Noma'lum xatolik yuz berdi.";
@@ -463,7 +798,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const prompt = card.getAttribute('data-prompt');
       messageInput.value = prompt;
       messageInput.focus();
-      // If it ends with a prompt colon, keep cursor at end; else send immediately
       if (prompt.endsWith(': ') || prompt.endsWith('Mavzu: ')) {
         messageInput.setSelectionRange(prompt.length, prompt.length);
       } else {

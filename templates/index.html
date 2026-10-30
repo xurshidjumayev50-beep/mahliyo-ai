@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mahliyo AI — Aqlli O'zbek Sun'iy Intellekti</title>
+  <link rel="icon" type="image/svg+xml" href="/static/images/logo.svg">
+
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Mobile Header -->
+    <header class="mobile-nav">
+      <button id="mobileMenuBtn" class="icon-btn" aria-label="Menyuni ochish">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <div class="brand-mini">
+        <img src="/static/images/logo.svg" alt="Mahliyo" class="brand-icon-mini">
+        <span class="brand-name">Mahliyo</span>
+        <span class="brand-badge">AI</span>
+      </div>
+      <button id="mobileNewChatBtn" class="icon-btn" aria-label="Yangi suhbat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <div class="brand-logo-glow">
+            <img src="/static/images/logo.svg" alt="Mahliyo AI Logo" class="brand-logo">
+          </div>
+          <span class="brand-title">Mahliyo</span>
+          <span class="brand-badge">AI</span>
+        </div>
+      </div>
+
+      <div class="sidebar-action">
+        <button id="newChatBtn" class="btn-new-chat">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Yangi suhbat</span>
+        </button>
+      </div>
+
+      <div class="sidebar-section-title">OLDINGI SUHBATLAR</div>
+
+      <div class="chat-history-list" id="chatHistoryList">
+        <!-- Seeded / Dynamic history items will appear here -->
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="guest-info">
+          <div class="guest-avatar">
+            <div class="status-indicator"></div>
+          </div>
+          <div class="guest-details">
+            <span class="guest-name">Mehmon rejimi</span>
+            <span class="guest-status" id="modelStatusTag">Mahliyo v1.0</span>
+          </div>
+        </div>
+        <button id="openSettingsBtn" class="btn-login-settings" title="Sozlamalar va API Kalit">
+          Kirish
+        </button>
+      </div>
+    </aside>
+
+    <!-- Sidebar Overlay for mobile -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- Main Chat Workspace -->
+    <main class="main-content">
+      
+      <!-- Top Action Bar -->
+      <div class="top-bar">
+        <div class="chat-current-title" id="currentChatTitle">Yangi suhbat</div>
+        <div class="top-bar-actions">
+          <button class="top-icon-btn" id="clearChatBtn" title="Suhbatni tozalash">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button class="top-icon-btn" id="topSettingsBtn" title="Sozlamalar">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Chat Body -->
+      <div class="chat-viewport" id="chatViewport">
+        
+        <!-- Welcome Hero View (Matching provided screenshot) -->
+        <div class="welcome-hero" id="welcomeHero">
+          <div class="hero-emblem-wrapper">
+            <div class="hero-emblem">
+              <img src="/static/images/logo.svg" alt="Mahliyo Moon" class="hero-moon-img">
+            </div>
+          </div>
+
+          <h1 class="hero-title">Salom, men Mahliyo. Bugun nima ustida ishlaymiz?</h1>
+          <p class="hero-subtitle">Savol bering, matn yozdiring, fayl tayyorlang. O'zbek tilida gaplashamiz.</p>
+
+          <!-- 4 Quick Suggestion Cards -->
+          <div class="prompt-cards-grid">
+            <button class="prompt-card" data-prompt="Menga professional taqdimot (slayd) rejasi va matnini tuzib ber. Mavzu: ">
+              <div class="card-title">Slayd rejasini tuz</div>
+              <div class="card-subtitle">Mavzu bering, men reja va matn yozaman.</div>
+            </button>
+
+            <button class="prompt-card" data-prompt="Menga o'zbek tilida to'g'ri va rasmiy ariza (yoki xat) namunasi yozib ber: ">
+              <div class="card-title">Rasmiy xat yoz</div>
+              <div class="card-subtitle">Ariza, xat, hisobot: to'g'ri shaklda.</div>
+            </button>
+
+            <button class="prompt-card" data-prompt="Rekursiya va iteratsiya farqini oddiy va tushunarli hayotiy misol bilan tushuntirib ber.">
+              <div class="card-title">Oddiy qilib tushuntir</div>
+              <div class="card-subtitle">Murakkab mavzuni misol bilan oching.</div>
+            </button>
+
+            <button class="prompt-card" data-prompt="Menda kodda xatolik bor, sababini topishga va tuzatishga yordam ber: ">
+              <div class="card-title">Kod xatosini top</div>
+              <div class="card-subtitle">Xabarni yuboring, sababini topamiz.</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Messages Stream (Shown during active chat) -->
+        <div class="messages-container" id="messagesContainer"></div>
+
+        <!-- Thinking/Streaming Indicator -->
+        <div class="thinking-bubble" id="thinkingBubble" style="display: none;">
+          <div class="bot-avatar-mini">
+            <img src="/static/images/logo.svg" alt="M">
+          </div>
+          <div class="thinking-content">
+            <span class="thinking-text">Mahliyo javob tayyorlamoqda</span>
+            <span class="dot-pulse"><span></span><span></span><span></span></span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Chat Input Bar -->
+      <footer class="chat-footer">
+        
+        <!-- File preview pill if attached -->
+        <div class="file-preview-bar" id="filePreviewBar" style="display: none;">
+          <div class="file-preview-chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+              <polyline points="13 2 13 9 20 9"></polyline>
+            </svg>
+            <span id="attachedFileName" class="file-name-text">fayl.txt</span>
+            <button id="removeAttachmentBtn" class="btn-remove-file" title="O'chirish">&times;</button>
+          </div>
+        </div>
+
+        <form class="input-form" id="chatForm">
+          <input type="file" id="fileInput" style="display: none;" accept="image/*,.txt,.pdf,.py,.js,.html,.json,.doc,.docx">
+          
+          <button type="button" class="btn-attachment" id="attachmentBtn" title="Fayl yoki rasm biriktirish">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+            </svg>
+          </button>
+
+          <textarea 
+            id="messageInput" 
+            class="chat-textarea" 
+            placeholder="Mahliyo'ga yozing..." 
+            rows="1"
+            autocomplete="off"
+            spellcheck="false"></textarea>
+
+          <button type="button" class="btn-mic" id="micBtn" title="Ovoz bilan yozish" style="display: none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+
+          <button type="submit" class="btn-send" id="sendBtn" title="Yuborish" aria-label="Yuborish">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </button>
+        </form>
+
+        <div class="disclaimer-text">
+          Mahliyo xato qilishi mumkin. Muhim ma'lumotni tekshirib ko'ring.
+        </div>
+      </footer>
+
+    </main>
+
+    <!-- Settings / Login Modal -->
+    <div class="modal-backdrop" id="settingsModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <img src="/static/images/logo.svg" alt="Mahliyo" class="modal-logo">
+            <h3>Mahliyo AI — Sozlamalar</h3>
+          </div>
+          <button class="btn-close-modal" id="closeSettingsBtn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          
+          <div class="setting-group">
+            <label for="geminiApiKey">Google Gemini API Kaliti</label>
+            <div class="input-with-action">
+              <input type="password" id="geminiApiKey" placeholder="AIzaSy... (bo'sh qoldirilsa lokal rejimda ishlaydi)">
+              <button type="button" id="toggleApiKeyVisBtn" class="btn-sm-action">Ko'rish</button>
+            </div>
+            <p class="field-hint">
+              Bepul kalit olish: <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Kalit kiritilmasa ham Mahliyo aqlli rejimda javob beradi.
+            </p>
+          </div>
+
+          <div class="setting-group">
+            <label for="modelSelect">Sun'iy intellekt modeli</label>
+            <select id="modelSelect">
+              <option value="gemini-1.5-flash" selected>Gemini 1.5 Flash (Tezkor va tavsiya etiladi)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Eng chuqur tahlil va katta bilim)</option>
+              <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Yangi avlod)</option>
+            </select>
+          </div>
+
+          <div class="setting-group">
+            <label for="systemPromptInput">Tizim ko'rsatmasi (System Prompt)</label>
+            <textarea id="systemPromptInput" rows="3" placeholder="Mahliyo o'zini qanday tutishi kerakligini belgilang..."></textarea>
+          </div>
+
+          <div id="keyStatusAlert" class="alert-box" style="display: none;"></div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="testKeyBtn">Kalitni tekshirish</button>
+          <button type="button" class="btn-primary" id="saveSettingsBtn">Saqlash</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Main JavaScript Application -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

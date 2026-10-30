@@ -1,0 +1,20 @@
+services:
+  mahliyo-ai:
+    build: .
+    container_name: mahliyo-ai
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - mahliyo_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mahliyo_data:

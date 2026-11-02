@@ -1,5 +1,5 @@
 /**
- * Mahliyo AI — Front-End Application Logic v1.1
+ * Mahliyo AI — Front-End Application Logic v1.4
  * Features: Real-time chat, Voice Recognition, Speech Synthesis,
  * PPTX Slide Deck Generator & Viewer, Word DOCX Mustaqil Ish Viewer.
  */
@@ -15,6 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatForm = document.getElementById('chatForm');
   const messageInput = document.getElementById('messageInput');
   const sendBtn = document.getElementById('sendBtn');
+  const stopGeneratingBtn = document.getElementById('stopGeneratingBtn');
+  const internetToggleBtn = document.getElementById('internetToggleBtn');
   const micBtn = document.getElementById('micBtn');
   const attachmentBtn = document.getElementById('attachmentBtn');
   const fileInput = document.getElementById('fileInput');
@@ -28,6 +30,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const mobileNewChatBtn = document.getElementById('mobileNewChatBtn');
   const quickSlideBtn = document.getElementById('quickSlideBtn');
   const quickDocBtn = document.getElementById('quickDocBtn');
+  const quickExcelBtn = document.getElementById('quickExcelBtn');
+  const openTranslatorBtn = document.getElementById('openTranslatorBtn');
+  const translatorModal = document.getElementById('translatorModal');
+  const closeTranslatorBtn = document.getElementById('closeTranslatorBtn');
+  const translateSource = document.getElementById('translateSource');
+  const translateTarget = document.getElementById('translateTarget');
+  const swapTranslateLanguagesBtn = document.getElementById('swapTranslateLanguages');
+  const translateInput = document.getElementById('translateInput');
+  const translateOutput = document.getElementById('translateOutput');
+  const translateBtn = document.getElementById('translateBtn');
+  const copyTranslationBtn = document.getElementById('copyTranslationBtn');
+  const speakTranslationBtn = document.getElementById('speakTranslationBtn');
+  const translatorStatus = document.getElementById('translatorStatus');
   const clearChatBtn = document.getElementById('clearChatBtn');
   const chatHistoryList = document.getElementById('chatHistoryList');
   const currentChatTitle = document.getElementById('currentChatTitle');
@@ -67,19 +82,47 @@ document.addEventListener('DOMContentLoaded', () => {
   const testKeyBtn = document.getElementById('testKeyBtn');
   const keyStatusAlert = document.getElementById('keyStatusAlert');
   const modelStatusTag = document.getElementById('modelStatusTag');
+  const guestName = document.getElementById('guestName');
+  const authModal = document.getElementById('authModal');
+  const closeAuthModalBtn = document.getElementById('closeAuthModalBtn');
+  const authTabs = document.querySelectorAll('[data-auth-tab]');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const authMessageWrap = document.querySelector('.auth-message-wrap');
+  const authStatusAlert = document.getElementById('authStatusAlert');
 
   // --- State ---
   let activeChatId = null;
   let conversations = [];
+  let authUser = null;
   let attachedFile = null;
   let isGenerating = false;
   let isRecordingVoice = false;
   let speechRecognition = null;
   let currentSpeakingUtterance = null;
+  let activeChatAbortController = null;
+  let useSearch = localStorage.getItem('mahliyo_use_search') === 'true';
 
   // Active slide deck state
   let currentSlideDeck = [];
   let currentSlideIndex = 0;
+
+  if (internetToggleBtn) {
+    function updateInternetToggle() {
+      internetToggleBtn.classList.toggle('active', useSearch);
+      internetToggleBtn.setAttribute('aria-pressed', String(useSearch));
+      internetToggleBtn.title = useSearch
+        ? 'Internet qidiruvi yoqilgan'
+        : "Google Search orqali internetdan qidirish";
+    }
+
+    updateInternetToggle();
+    internetToggleBtn.addEventListener('click', () => {
+      useSearch = !useSearch;
+      localStorage.setItem('mahliyo_use_search', String(useSearch));
+      updateInternetToggle();
+    });
+  }
 
   // --- Speech Recognition Setup ---
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -202,9 +245,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- LocalStorage Helpers ---
   function loadStoredSettings() {
     const key = localStorage.getItem('mahliyo_gemini_key') || '';
-    const model = localStorage.getItem('mahliyo_model') || 'gemini-1.5-flash';
+    const savedModel = localStorage.getItem('mahliyo_model');
+    const model = savedModel === 'gemini-3.5-flash'
+      ? savedModel
+      : 'gemini-3.5-flash';
     const prompt = localStorage.getItem('mahliyo_system_prompt') || '';
 
+    localStorage.setItem('mahliyo_model', model);
     geminiApiKeyInput.value = key;
     modelSelect.value = model;
     systemPromptInput.value = prompt;
@@ -217,12 +264,12 @@ document.addEventListener('DOMContentLoaded', () => {
       modelStatusTag.textContent = model.replace('gemini-', 'Gemini ').split('-')[0] + ' (Faol)';
       modelStatusTag.style.color = 'var(--color-primary)';
     } else {
-      modelStatusTag.textContent = 'Mahliyo v1.1';
-      modelStatusTag.style.color = 'var(--text-dim)';
+      modelStatusTag.textContent = 'Mahliyo v1.4 · .env kaliti';
+      modelStatusTag.style.color = '#fbbf24';
     }
   }
 
-  function loadConversations() {
+  function loadGuestConversations() {
     const saved = localStorage.getItem('mahliyo_conversations');
     if (saved) {
       try {
@@ -237,8 +284,51 @@ document.addEventListener('DOMContentLoaded', () => {
     renderHistoryList();
   }
 
-  function saveConversations() {
-    localStorage.setItem('mahliyo_conversations', JSON.stringify(conversations));
+  function saveConversations(chat = null) {
+    if (!authUser) {
+      localStorage.setItem('mahliyo_conversations', JSON.stringify(conversations));
+      return;
+    }
+    if (!chat) return;
+
+    fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(chat)
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Suhbatni saqlab bo‘lmadi.');
+      }
+    }).catch((error) => {
+      console.error('Suhbatni saqlash xatosi:', error);
+    });
+  }
+
+  function updateAuthUi() {
+    guestName.textContent = authUser ? authUser.email : 'Mehmon rejimi';
+    openSettingsBtn.textContent = authUser ? 'Chiqish' : 'Kirish';
+    openSettingsBtn.title = authUser ? 'Akkauntdan chiqish' : 'Akkauntga kirish';
+  }
+
+  async function loadAccountConversations() {
+    const response = await fetch('/api/conversations');
+    if (!response.ok) throw new Error('Akkaunt suhbatlarini yuklab bo‘lmadi.');
+    conversations = (await response.json()).map((chat) => ({ ...chat }));
+    renderHistoryList();
+    startNewChat();
+  }
+
+  async function initializeAuth() {
+    try {
+      const response = await fetch('/api/auth/me');
+      const data = await response.json();
+      authUser = data.authenticated ? data.user : null;
+      updateAuthUi();
+      if (authUser) await loadAccountConversations();
+    } catch (error) {
+      console.error('Akkaunt holatini tekshirish xatosi:', error);
+    }
   }
 
   // --- History UI Rendering ---
@@ -268,10 +358,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function selectConversation(id) {
+  async function selectConversation(id) {
     activeChatId = id;
     const chat = conversations.find(c => c.id === id);
     if (!chat) return;
+
+    if (authUser && !Array.isArray(chat.messages)) {
+      try {
+        const response = await fetch(`/api/conversations/${encodeURIComponent(id)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Suhbatni yuklab bo‘lmadi.');
+        chat.messages = data.messages;
+      } catch (error) {
+        console.error('Suhbatni yuklash xatosi:', error);
+        return;
+      }
+      if (activeChatId !== id) return;
+    }
 
     currentChatTitle.textContent = chat.title;
     renderHistoryList();
@@ -279,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chat.messages && chat.messages.length > 0) {
       welcomeHero.style.display = 'none';
       messagesContainer.innerHTML = '';
-      chat.messages.forEach(msg => appendMessageDOM(msg.role, msg.content, msg.artifact));
+      chat.messages.forEach(msg => appendMessageDOM(msg.role, msg.content, msg.artifact, null, msg.sources));
       scrollChatToBottom();
     } else {
       startNewChat();
@@ -287,8 +390,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function deleteConversation(id) {
+    if (authUser) {
+      fetch(`/api/conversations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        .then(async (response) => {
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Suhbatni o‘chirib bo‘lmadi.');
+          }
+        })
+        .catch((error) => console.error('Suhbatni o‘chirish xatosi:', error));
+    }
     conversations = conversations.filter(c => c.id !== id);
-    saveConversations();
+    if (!authUser) saveConversations();
     if (activeChatId === id) {
       startNewChat();
     } else {
@@ -309,7 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Message DOM Rendering ---
-  function appendMessageDOM(role, text, artifact = null) {
+  function appendMessageDOM(role, text, artifact = null, imageUrl = null, sources = []) {
     const row = document.createElement('div');
     row.className = `message-row ${role}`;
 
@@ -375,6 +488,52 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
           `;
+        } else if (artifact.type === 'spreadsheet') {
+          const sheetPreviews = (artifact.sheets || []).map((sheet) => {
+            const headerHtml = (sheet.columns || [])
+              .map((column) => `<th>${escapeHtml(String(column))}</th>`)
+              .join('');
+            const rowHtml = (sheet.rows || []).slice(0, 10).map((cells) => `
+              <tr>${cells.map((value) => `<td>${escapeHtml(String(value ?? ''))}</td>`).join('')}</tr>
+            `).join('');
+            return `
+              <div class="spreadsheet-sheet-preview">
+                <div class="spreadsheet-sheet-name">${escapeHtml(sheet.name || 'Jadval')}</div>
+                <div class="spreadsheet-table-scroll">
+                  <table class="spreadsheet-preview-table">
+                    <thead><tr>${headerHtml}</tr></thead>
+                    <tbody>${rowHtml}</tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }).join('');
+          artifactHtml = `
+            <div class="artifact-card spreadsheet">
+              <div class="artifact-info">
+                <div class="artifact-badge-icon">X</div>
+                <div>
+                  <div class="artifact-title">📈 Excel jadval (.xlsx)</div>
+                  <div class="artifact-subtitle">${escapeHtml(artifact.topic || 'Jadval')}</div>
+                </div>
+              </div>
+              <div class="spreadsheet-previews">${sheetPreviews}</div>
+              <div class="artifact-actions">
+                <a href="${escapeHtml(artifact.file_url)}" class="btn-artifact-download" download="${escapeHtml(artifact.filename || 'jadval.xlsx')}">
+                  XLSX Yuklab olish
+                </a>
+              </div>
+            </div>
+          `;
+        } else if (artifact.type === 'image') {
+          artifactHtml = `
+            <div class="generated-image-card">
+              <img src="${escapeHtml(artifact.file_url)}" alt="Mahliyo yaratgan rasm">
+              <a href="${escapeHtml(artifact.file_url)}" download="${escapeHtml(artifact.filename || 'mahliyo-rasm.png')}">
+                Rasmni yuklab olish
+              </a>
+            </div>
+          `;
         }
       }
 
@@ -384,6 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="message-bubble">
           <div class="msg-body">${formatMarkdown(text)}</div>
+          ${renderSourcesBlock(sources)}
           ${artifactHtml}
           <div class="msg-actions">
             <button class="btn-msg-action copy-msg-btn">
@@ -407,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Copy text button
       const copyBtn = row.querySelector('.copy-msg-btn');
       copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(text).then(() => {
+        navigator.clipboard.writeText(row.dataset.messageText || '').then(() => {
           copyBtn.textContent = "Nusxa olindi!";
           setTimeout(() => {
             copyBtn.innerHTML = `
@@ -422,7 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // TTS (Speech synthesis) button
       const ttsBtn = row.querySelector('.tts-msg-btn');
       ttsBtn.addEventListener('click', () => {
-        speakText(text, ttsBtn);
+        speakText(row.dataset.messageText || '', ttsBtn);
       });
 
       // Artifact view handlers
@@ -451,6 +611,15 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="msg-body">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
         </div>
       `;
+      if (imageUrl) {
+        const image = document.createElement('img');
+        image.className = 'attached-image-preview';
+        image.src = imageUrl;
+        image.alt = 'Suhbatga biriktirilgan rasm';
+        image.addEventListener('load', () => URL.revokeObjectURL(imageUrl), { once: true });
+        image.addEventListener('error', () => URL.revokeObjectURL(imageUrl), { once: true });
+        row.querySelector('.message-bubble').appendChild(image);
+      }
     }
 
     messagesContainer.appendChild(row);
@@ -462,6 +631,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     scrollChatToBottom();
+    if (role === 'assistant') {
+      row.dataset.messageText = text;
+    }
+    return row;
+  }
+
+  function updateStreamingMessage(row, text, sources = []) {
+    row.dataset.messageText = text;
+    const body = row.querySelector('.msg-body');
+    body.innerHTML = formatMarkdown(text);
+    row.querySelector('.sources-block')?.remove();
+    body.insertAdjacentHTML('afterend', renderSourcesBlock(sources));
+    row.querySelectorAll('pre code').forEach((block) => {
+      hljs.highlightElement(block);
+      addCodeCopyBtn(block);
+    });
+    scrollChatToBottom();
+  }
+
+  function renderSourcesBlock(sources) {
+    if (!Array.isArray(sources) || !sources.length) return '';
+    const links = sources.map((source) => {
+      if (!source || typeof source.url !== 'string') return '';
+      let url;
+      try {
+        url = new URL(source.url);
+      } catch {
+        return '';
+      }
+      if (!['http:', 'https:'].includes(url.protocol)) return '';
+      const title = typeof source.title === 'string' && source.title.trim()
+        ? source.title
+        : url.hostname;
+      return `<li><a href="${escapeHtml(url.href)}" target="_blank" rel="noopener">${escapeHtml(title)}</a></li>`;
+    }).filter(Boolean);
+    if (!links.length) return '';
+    return `<div class="sources-block"><strong>Manbalar</strong><ul>${links.join('')}</ul></div>`;
   }
 
   function addCodeCopyBtn(block) {
@@ -513,7 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- Text-to-Speech (Mahliyo's Voice) ---
-  function speakText(text, btnElement) {
+  function speakText(text, btnElement, language = 'uz-UZ') {
     if (!('speechSynthesis' in window)) {
       alert("Brauzeringizda nutq sintezi qo'llab-quvvatlanmaydi.");
       return;
@@ -523,7 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
       window.speechSynthesis.cancel();
       if (btnElement) {
         btnElement.classList.remove('playing');
-        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+        btnElement.querySelector('span').textContent = btnElement.dataset.idleLabel || "Ovozli eshitish";
       }
       return;
     }
@@ -531,13 +737,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Strip markdown formatting symbols for natural reading
     const clean = text.replace(/[#*`_~\[\]\(\)\>]/g, ' ').replace(/\n+/g, '. ');
     const utter = new SpeechSynthesisUtterance(clean);
-    utter.lang = 'uz-UZ';
+    utter.lang = language;
     utter.rate = 1.0;
     utter.pitch = 1.05;
 
     // Pick a pleasant voice if available
     const voices = window.speechSynthesis.getVoices();
-    const preferredVoice = voices.find(v => v.lang.startsWith('uz') || v.lang.startsWith('tr') || v.lang.startsWith('ru'));
+    const languagePrefix = language.split('-')[0].toLowerCase();
+    const preferredVoice = voices.find(v => v.lang.toLowerCase().startsWith(languagePrefix))
+      || voices.find(v => v.lang.startsWith('uz') || v.lang.startsWith('tr') || v.lang.startsWith('ru'));
     if (preferredVoice) utter.voice = preferredVoice;
 
     if (btnElement) {
@@ -548,14 +756,14 @@ document.addEventListener('DOMContentLoaded', () => {
     utter.onend = () => {
       if (btnElement) {
         btnElement.classList.remove('playing');
-        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+        btnElement.querySelector('span').textContent = btnElement.dataset.idleLabel || "Ovozli eshitish";
       }
     };
 
     utter.onerror = () => {
       if (btnElement) {
         btnElement.classList.remove('playing');
-        btnElement.querySelector('span').textContent = "Ovozli eshitish";
+        btnElement.querySelector('span').textContent = btnElement.dataset.idleLabel || "Ovozli eshitish";
       }
     };
 
@@ -666,13 +874,178 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  quickExcelBtn.addEventListener('click', () => {
+    const topic = prompt("Excel jadval mavzusini kiriting:", "Oylik daromad va xarajatlar");
+    if (topic && topic.trim()) {
+      messageInput.value = `Excel jadval tuzib ber: ${topic.trim()}`;
+      handleSend();
+      closeMobileSidebar();
+    }
+  });
+
+  openTranslatorBtn.addEventListener('click', () => {
+    translatorModal.style.display = 'flex';
+    translatorStatus.textContent = '';
+    closeMobileSidebar();
+    translateInput.focus();
+  });
+
+  closeTranslatorBtn.addEventListener('click', () => {
+    translatorModal.style.display = 'none';
+  });
+
+  translatorModal.addEventListener('click', (event) => {
+    if (event.target === translatorModal) translatorModal.style.display = 'none';
+  });
+
+  swapTranslateLanguagesBtn.addEventListener('click', () => {
+    const previousSource = translateSource.value;
+    const previousTarget = translateTarget.value;
+    translateSource.value = previousTarget;
+    translateTarget.value = previousSource === 'auto'
+      ? (previousTarget === 'uz-Latn' ? 'en' : 'uz-Latn')
+      : previousSource;
+    translatorStatus.textContent = previousSource === 'auto'
+      ? "Avto manba tili almashtirildi; kerakli maqsad tilini tanlang."
+      : '';
+  });
+
+  translateBtn.addEventListener('click', async () => {
+    const text = translateInput.value;
+    if (!text.trim()) {
+      translatorStatus.textContent = 'Tarjima uchun matn kiriting.';
+      return;
+    }
+
+    translateBtn.disabled = true;
+    translatorStatus.textContent = 'Tarjima qilinmoqda...';
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          source: translateSource.value,
+          target: translateTarget.value
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Tarjima bajarilmadi.');
+      translateOutput.value = data.translation;
+      translatorStatus.textContent = 'Tarjima tayyor.';
+    } catch (error) {
+      translatorStatus.textContent = error.message;
+    } finally {
+      translateBtn.disabled = false;
+    }
+  });
+
+  copyTranslationBtn.addEventListener('click', async () => {
+    if (!translateOutput.value) {
+      translatorStatus.textContent = 'Avval matnni tarjima qiling.';
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(translateOutput.value);
+      translatorStatus.textContent = 'Tarjima nusxalandi.';
+    } catch (error) {
+      translateOutput.focus();
+      translateOutput.select();
+      if (document.execCommand('copy')) {
+        translatorStatus.textContent = 'Tarjima nusxalandi.';
+      } else {
+        translatorStatus.textContent = 'Nusxa olib bo‘lmadi. Matnni qo‘lda belgilang.';
+      }
+    }
+  });
+
+  speakTranslationBtn.dataset.idleLabel = 'Eshitish';
+  speakTranslationBtn.addEventListener('click', () => {
+    if (!translateOutput.value) {
+      translatorStatus.textContent = 'Avval matnni tarjima qiling.';
+      return;
+    }
+    const speechLanguages = {
+      'uz-Latn': 'uz-UZ',
+      'uz-Cyrl': 'uz-UZ',
+      en: 'en-US',
+      ru: 'ru-RU',
+      tr: 'tr-TR'
+    };
+    speakText(translateOutput.value, speakTranslationBtn, speechLanguages[translateTarget.value]);
+  });
+
   // --- Sending Message & Chat API ---
+  async function readChatStream(response, onText) {
+    if (!response.body) throw new Error('Brauzer javob oqimini qo‘llab-quvvatlamaydi.');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = '';
+    let sources = [];
+
+    function processEvent(block) {
+      const eventName = block.split('\n').find(line => line.startsWith('event:'))?.slice(6).trim();
+      const data = block.split('\n')
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trim())
+        .join('\n');
+      if (!data) return;
+      const payload = JSON.parse(data);
+      if (eventName === 'error' || payload.error) {
+        throw new Error(payload.error || 'Javob oqimi xatosi.');
+      }
+      if (eventName === 'chunk' && typeof payload.text === 'string') {
+        result += payload.text;
+        onText(payload.text, result);
+      } else if (eventName === 'sources' && Array.isArray(payload.sources)) {
+        sources = payload.sources;
+      }
+    }
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      buffer = buffer.replace(/\r\n/g, '\n');
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        processEvent(buffer.slice(0, separator));
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) processEvent(buffer);
+    if (!result) throw new Error('Javob oqimida matn kelmadi.');
+    return { text: result, sources };
+  }
+
+  async function requestLegacyChat(payload, signal) {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal
+    });
+    return { response, data: await response.json() };
+  }
+
   async function handleSend() {
     const rawText = messageInput.value.trim();
     if (!rawText && !attachedFile) return;
     if (isGenerating) return;
 
-    let finalPrompt = rawText;
+    const attachedImage = attachedFile && attachedFile.type.startsWith('image/') ? attachedFile : null;
+    if (attachedImage && !['image/jpeg', 'image/png', 'image/webp'].includes(attachedImage.type)) {
+      alert("Faqat JPEG, PNG yoki WebP formatidagi rasmlar qo'llab-quvvatlanadi.");
+      return;
+    }
+    if (attachedImage && attachedImage.size > 5 * 1024 * 1024) {
+      alert("Rasm hajmi 5 MB dan oshmasligi kerak.");
+      return;
+    }
+
+    let finalPrompt = rawText || (attachedImage ? "Iltimos, ushbu rasmni tahlil qilib bering." : '');
     if (attachedFile) {
       finalPrompt = `[Ilova qilingan fayl: ${attachedFile.name}]\n` + finalPrompt;
     }
@@ -681,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', () => {
     welcomeHero.style.display = 'none';
 
     // Append User Message
-    appendMessageDOM('user', finalPrompt);
+    appendMessageDOM('user', finalPrompt, null, attachedImage ? URL.createObjectURL(attachedImage) : null);
 
     // Save in conversation memory
     let currentChat = conversations.find(c => c.id === activeChatId);
@@ -699,7 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     currentChat.messages.push({ role: 'user', content: finalPrompt });
-    saveConversations();
+    saveConversations(currentChat);
     renderHistoryList();
     currentChatTitle.textContent = currentChat.title;
 
@@ -713,49 +1086,137 @@ document.addEventListener('DOMContentLoaded', () => {
     thinkingStatusText.textContent = "Mahliyo javob tayyorlamoqda";
     thinkingBubble.style.display = 'flex';
     sendBtn.disabled = true;
+    stopGeneratingBtn.style.display = 'flex';
     scrollChatToBottom();
 
     // Prepare API payload
     const apiKey = localStorage.getItem('mahliyo_gemini_key') || '';
-    const modelName = localStorage.getItem('mahliyo_model') || 'gemini-1.5-flash';
+    const modelName = localStorage.getItem('mahliyo_model') || 'gemini-3.5-flash';
     const systemPrompt = localStorage.getItem('mahliyo_system_prompt') || '';
 
+    let streamingRow = null;
+    let streamedReply = '';
+    let legacyRequestStarted = false;
+    activeChatAbortController = new AbortController();
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: finalPrompt,
-          history: currentChat.messages.slice(0, -1),
-          api_key: apiKey,
-          model_name: modelName,
-          system_prompt: systemPrompt
-        })
-      });
+      const imagePayload = attachedImage ? await readImageAsBase64(attachedImage) : null;
+      const payload = {
+        message: finalPrompt,
+        history: currentChat.messages.slice(0, -1),
+        api_key: apiKey,
+        model_name: modelName,
+        system_prompt: systemPrompt,
+        image: imagePayload,
+        use_search: useSearch
+      };
+      const signal = activeChatAbortController.signal;
+      const requestFallback = () => {
+        legacyRequestStarted = true;
+        return requestLegacyChat(payload, signal);
+      };
+      let response;
+      let data;
 
-      const data = await response.json();
+      try {
+        response = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal
+        });
+        const contentType = response.headers.get('Content-Type') || '';
+        if (response.ok && contentType.toLowerCase().includes('text/event-stream')) {
+          try {
+            const streamResult = await readChatStream(response, (chunk, fullText) => {
+              streamedReply = fullText;
+              if (!streamingRow) streamingRow = appendMessageDOM('assistant', '');
+              updateStreamingMessage(streamingRow, fullText);
+              thinkingStatusText.textContent = 'Javob yozilmoqda...';
+            });
+            streamedReply = streamResult.text;
+            data = { reply: streamedReply, artifact: null, sources: streamResult.sources };
+          } catch (streamError) {
+            if (signal.aborted) throw streamError;
+            if (streamingRow) streamingRow.remove();
+            streamingRow = null;
+            streamedReply = '';
+            ({ response, data } = await requestFallback());
+          }
+        } else {
+          ({ response, data } = await requestFallback());
+        }
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (legacyRequestStarted) throw error;
+        if (streamingRow) streamingRow.remove();
+        streamingRow = null;
+        streamedReply = '';
+        ({ response, data } = await requestFallback());
+      }
+
       thinkingBubble.style.display = 'none';
 
       if (response.ok && data.reply) {
-        appendMessageDOM('assistant', data.reply, data.artifact);
-        currentChat.messages.push({ role: 'assistant', content: data.reply, artifact: data.artifact });
-        saveConversations();
+        if (streamingRow) {
+          updateStreamingMessage(streamingRow, data.reply, data.sources);
+        } else {
+          appendMessageDOM('assistant', data.reply, data.artifact, null, data.sources);
+        }
+        currentChat.messages.push({
+          role: 'assistant',
+          content: data.reply,
+          artifact: data.artifact,
+          sources: data.sources || []
+        });
+        saveConversations(currentChat);
       } else {
         const errMsg = data.error || "Noma'lum xatolik yuz berdi.";
         appendMessageDOM('assistant', `⚠️ **Xatolik:** ${errMsg}`);
       }
     } catch (err) {
       thinkingBubble.style.display = 'none';
-      appendMessageDOM('assistant', `⚠️ **Aloqa xatosi:** Server bilan bog'lanib bo'lmadi (${err.message})`);
+      if (activeChatAbortController?.signal.aborted) {
+        if (streamingRow && streamedReply) {
+          updateStreamingMessage(streamingRow, streamedReply);
+          currentChat.messages.push({ role: 'assistant', content: streamedReply });
+          saveConversations(currentChat);
+        } else if (streamingRow) {
+          streamingRow.remove();
+        }
+      } else {
+        appendMessageDOM('assistant', `⚠️ **Aloqa xatosi:** Server bilan bog'lanib bo'lmadi (${err.message})`);
+      }
     } finally {
+      activeChatAbortController = null;
       isGenerating = false;
+      thinkingBubble.style.display = 'none';
       sendBtn.disabled = false;
+      stopGeneratingBtn.style.display = 'none';
       scrollChatToBottom();
       messageInput.focus();
     }
   }
 
   // --- Attachments ---
+  function readImageAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        if (typeof dataUrl !== 'string' || !dataUrl.includes(',')) {
+          reject(new Error("Rasmni o'qib bo'lmadi."));
+          return;
+        }
+        resolve({
+          mime_type: file.type,
+          data: dataUrl.slice(dataUrl.indexOf(',') + 1)
+        });
+      };
+      reader.onerror = () => reject(new Error("Rasmni o'qishda xatolik yuz berdi."));
+      reader.readAsDataURL(file);
+    });
+  }
+
   attachmentBtn.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', (e) => {
@@ -778,6 +1239,10 @@ document.addEventListener('DOMContentLoaded', () => {
   chatForm.addEventListener('submit', (e) => {
     e.preventDefault();
     handleSend();
+  });
+
+  stopGeneratingBtn.addEventListener('click', () => {
+    activeChatAbortController?.abort();
   });
 
   messageInput.addEventListener('keydown', (e) => {
@@ -818,7 +1283,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const currentChat = conversations.find(c => c.id === activeChatId);
       if (currentChat) {
         currentChat.messages = [];
-        saveConversations();
+        saveConversations(currentChat);
         startNewChat();
       }
     }
@@ -846,12 +1311,97 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsModal.style.display = 'none';
   };
 
-  openSettingsBtn.addEventListener('click', openModal);
+  function showAuthMessage(message, type = 'error') {
+    authStatusAlert.className = `alert-box ${type}`;
+    authStatusAlert.textContent = message;
+    authStatusAlert.style.display = 'block';
+    authMessageWrap.style.display = 'block';
+  }
+
+  function openAuthModal() {
+    authModal.style.display = 'flex';
+    authStatusAlert.style.display = 'none';
+  }
+
+  function closeAuthModal() {
+    authModal.style.display = 'none';
+  }
+
+  authTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const selectedTab = tab.dataset.authTab;
+      authTabs.forEach((item) => item.classList.toggle('active', item === tab));
+      loginForm.style.display = selectedTab === 'login' ? 'flex' : 'none';
+      registerForm.style.display = selectedTab === 'register' ? 'flex' : 'none';
+      authStatusAlert.style.display = 'none';
+      authMessageWrap.style.display = 'none';
+    });
+  });
+
+  async function submitAuthForm(form, endpoint) {
+    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.get('email'),
+          password: formData.get('password')
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Akkaunt so‘rovi bajarilmadi.');
+
+      authUser = data.user;
+      updateAuthUi();
+      await loadAccountConversations();
+      form.reset();
+      closeAuthModal();
+    } catch (error) {
+      showAuthMessage(error.message);
+    } finally {
+      submitButton.disabled = false;
+    }
+  }
+
+  loginForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    submitAuthForm(loginForm, '/api/auth/login');
+  });
+
+  registerForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    submitAuthForm(registerForm, '/api/auth/register');
+  });
+
+  openSettingsBtn.addEventListener('click', async () => {
+    if (!authUser) {
+      openAuthModal();
+      return;
+    }
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) throw new Error('Akkauntdan chiqib bo‘lmadi.');
+      authUser = null;
+      updateAuthUi();
+      loadGuestConversations();
+      startNewChat();
+    } catch (error) {
+      console.error('Akkauntdan chiqish xatosi:', error);
+    }
+  });
+
   topSettingsBtn.addEventListener('click', openModal);
   closeSettingsBtn.addEventListener('click', closeModal);
+  closeAuthModalBtn.addEventListener('click', closeAuthModal);
 
   settingsModal.addEventListener('click', (e) => {
     if (e.target === settingsModal) closeModal();
+  });
+  authModal.addEventListener('click', (e) => {
+    if (e.target === authModal) closeAuthModal();
   });
 
   toggleApiKeyVisBtn.addEventListener('click', () => {
@@ -879,13 +1429,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   testKeyBtn.addEventListener('click', async () => {
     const key = geminiApiKeyInput.value.trim();
-    if (!key) {
-      keyStatusAlert.className = 'alert-box error';
-      keyStatusAlert.textContent = "Iltimos, avval API kalitni kiriting.";
-      keyStatusAlert.style.display = 'block';
-      return;
-    }
-
     testKeyBtn.textContent = "Tekshirilmoqda...";
     testKeyBtn.disabled = true;
 
@@ -915,6 +1458,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Initialize App ---
   loadStoredSettings();
-  loadConversations();
+  loadGuestConversations();
   startNewChat();
+  initializeAuth();
 });

@@ -21,13 +21,17 @@
 ## ✨ Asosiy Xususiyatlari
 
 - 🌌 **Premium Ko'k Midnight Dizayn:** Haqiqiy milliy naqshlar (geometric Islamic pattern) bilan bezatilgan shinam va zamonaviy ko'k UI interfeysi.
-- ⚡ **Tezkor va Ravon Muloqot:** Google Gemini 1.5 Flash / Pro va Gemini 2.0 modellari bilan to'liq integratsiya.
-- 🧠 **Aqlli Lokal Rejim (Built-in Fallback):** Agar API kalit kiritilmagan bo'lsa ham, Mahliyo eng muhim mavzularda (slaydlar, arizalar, kod tahlili, sodda tushuntirishlar) avtomatik aqlli javob bera oladi.
-- 📝 **Markdown va Kodlar Sintaksisi:** Python, JS, C++, SQL va boshqa tillardagi kodlarni chiroyli ranglar bilan ajratib ko'rsatish va 1 tugma bilan nusxa olish.
+- ⚡ **Tezkor va Ravon Muloqot:** Google Gemini 3.5 Flash integratsiyasi; foydalanuvchi yozgan tilda javob beradi.
+- 💬 **So'zma-so'z javoblar:** Oddiy chat Gemini SSE oqimi orqali matnni darhol ko'rsatadi; rasm va fayl yaratish amallari mavjud endpointdan foydalanadi.
+- 🔑 **Gemini API Kaliti:** Oddiy AI suhbati, rasm tahlili va rasm yaratish uchun Google AI Studio kaliti talab qilinadi. Kalitsiz ham slayd va Word fayllarini tayyorlash hamda mavzu bo'yicha savollarga javob berish mumkin.
+- 📝 **Dasturlash Yordami:** Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Rust, PHP, Ruby, Swift, Kotlin, SQL, HTML va CSS kodlarini yozish hamda tahlil qilish.
 - 🗣️ **Ovozli O'qish (Text-to-Speech):** Mahliyo bergan javoblarni ovoz chiqarib o'qitish imkoniyati.
-- 📁 **Fayl va Rasmlar Biriktirish:** Savollarga hujjat va rasmlarni ilova qilish imkoniyati.
+- 📷 **Rasmni Tahlil va Generatsiya Qilish:** JPEG, PNG yoki WebP rasmini yuborib savol bering yoki yangi rasm yaratishni so'rang.
+- 📝 **Markdown va Kodlar Sintaksisi:** Kodlarni chiroyli ranglar bilan ajratib ko'rsatish va bir tugma bilan nusxa olish.
 - 💾 **Suhbatlar Tarixi (Persistent History):** Barcha yozishmalar saqlanib qoladi va istalgan vaqtda qayta ochilishi mumkin.
 - 🐳 **Docker & Docker Compose:** 1 ta buyruq bilan konteynerda ishga tushirishga to'liq tayyor.
+- 💾 **Doimiy ma'lumotlar:** Suhbatlar va yaratilgan fayllar Docker volume'da saqlanadi.
+- 📈 **Excel jadval yaratish:** Gemini tuzgan ma'lumotlar .xlsx faylga, sarlavha uslubi va jamlash/o'rtacha formulalari bilan yoziladi.
 
 ---
 
@@ -75,17 +79,38 @@ Yoki Gunicorn orqali:
 gunicorn --bind 0.0.0.0:5000 app:app
 ```
 
+Serverni birinchi marta ishga tushirishdan oldin `.env` faylida `SECRET_KEY` uchun tasodifiy, maxfiy qiymat belgilang. Uni yaratish uchun:
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Oddiy matnli suhbatlar `POST /api/chat/stream` orqali Gemini SSE oqimida keladi. Rasm, slayd, Word va streaming xatosi yoki qo'llab-quvvatlanmaydigan javoblar uchun brauzer avtomatik `POST /api/chat` endpointiga qaytadi; javob yozilayotganda **To'xtatish** tugmasi oqimni bekor qiladi.
+
+Yozish maydoni yonidagi **🌐 Internet** tugmasi Google Search grounding'ni yoqadi yoki o'chiradi; tanlov brauzer xotirasida saqlanadi. Yoqilganda oddiy chat javoblari manbalarni ko'rsatadi. Rasm va slayd/Word/Excel yaratish oqimlari internet qidiruvidan foydalanmaydi.
+
+### Akkauntlar va mehmon rejimi
+
+Sidebar pastidagi **Kirish** orqali email va parol bilan akkaunt yarating yoki tizimga kiring. Akkaunt suhbatlari SQLite bazasida foydalanuvchiga bog'lab saqlanadi; tizimga kirmagan foydalanuvchilar avvalgidek mehmon rejimida ishlaydi va suhbatlari brauzerning mahalliy xotirasida qoladi. Parollar Werkzeug orqali xeshlanadi, login urinishlari IP bo'yicha cheklanadi. Google orqali kirish keyingi bosqichda qo'shiladi.
+
+`/api/auth/register`, `/api/auth/login`, `/api/auth/logout` va `/api/auth/me` autentifikatsiya endpointlari hisoblanadi. `/api/conversations` endpointlari faqat joriy akkaunt suhbatlariga yoki mehmon rejimida akkauntga biriktirilmagan eski suhbatlarga ruxsat beradi.
+
+Sidebar'dagi **Tarjima** paneli matnni avtomatik aniqlash yoki O'zbek lotin, O'zbek kirill, Ingliz, Rus va Turk tillari orasida tarjima qiladi. `POST /api/translate` endpointi 5 000 belgidan uzun matnni bo'laklarga ajratadi; tarjima uchun serverdagi `GEMINI_API_KEY` ishlatiladi.
+
 ---
 
 ## 🔑 Gemini API Kalitini Sozlash
 
 1. [Google AI Studio](https://aistudio.google.com/app/apikey) sahifasidan bepul API kalit oling.
-2. Saytda chap pastdagi **"Kirish"** yoki tepadagi ⚙️ **Sozlamalar** tugmasini bosing.
+2. Tepadagi ⚙️ **Sozlamalar** tugmasini bosing.
 3. Kalitni joylashtiring va **"Saqlash"** tugmasini bosing.
-4. Yoki `.env` fayliga yozing:
+4. Saytga API kalit kiritish o'rniga uni serverdagi `.env` faylida saqlash uchun loyiha papkasidagi `.env` faylini oching (yangi nusxada `.env.example` faylidan ko'chiring) va quyidagicha kiriting. `.env` Git'ga qo'shilmaydi va Docker konteyneriga maxfiy muhit o'zgaruvchisi sifatida uzatiladi:
 ```env
 GEMINI_API_KEY=AIzaSy...
 ```
+
+Kalitni o'zgartirgandan keyin Docker Compose'ni qayta ishga tushiring: `docker compose up -d`. So'ng saytdagi Sozlamalardan kalitni tozalab, modelni saqlang: server `.env` kaliti chat so'rovlarida ishlatiladi. Xavfsizlik uchun kodga kalit yozmang va terminal buyrug'i argumenti sifatida bermang.
+
+Rasmni tahlil qilish va yangi rasm yaratish uchun Gemini API kaliti shart. Yaratilgan rasm modeli (`gemini-3.1-flash-lite-image`) Google API kvotasi va tarif shartlariga muvofiq ishlaydi. Agar kalit chat yoki terminalda oshkor bo'lgan bo'lsa, Google AI Studio'da bekor qiling va yangisini yarating.
 
 ---
 
@@ -118,4 +143,4 @@ mahliyo-ai/
 
 - **Loyiha nomi:** Mahliyo AI
 - **GitHub:** [https://github.com/xurshidjumayev50-beep](https://github.com/xurshidjumayev50-beep)
-- **Versiya:** 1.0.0
+- **Versiya:** 1.4.0

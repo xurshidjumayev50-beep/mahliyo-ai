@@ -30,6 +30,10 @@ wheels/
 .env.local
 static/generated/*.docx
 static/generated/*.pptx
+static/generated/*.xlsx
+static/generated/generated_*.png
+static/generated/generated_*.jpg
+static/generated/generated_*.webp
 
 # IDEs
 .idea/

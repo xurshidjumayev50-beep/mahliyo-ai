@@ -6,6 +6,9 @@ Specialized for Uzbek academic and professional standards.
 import os
 import uuid
 import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
@@ -19,6 +22,85 @@ from docx.oxml.ns import qn
 
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), "static", "generated")
 os.makedirs(GENERATED_DIR, exist_ok=True)
+
+
+def generate_xlsx(topic, sheets):
+    """Generate an Excel workbook with styled headers and basic numeric summaries."""
+    if not isinstance(sheets, list) or not sheets:
+        raise ValueError("Excel uchun kamida bitta varaq kerak.")
+
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    safe_topic = str(topic or "Jadval")
+    for sheet_index, sheet_data in enumerate(sheets, start=1):
+        columns = sheet_data.get("columns")
+        rows = sheet_data.get("rows")
+        if not isinstance(columns, list) or not columns:
+            raise ValueError("Excel varag'ida ustunlar bo'lishi kerak.")
+        if not isinstance(rows, list):
+            raise ValueError("Excel varag'idagi qatorlar noto'g'ri.")
+
+        base_name = str(sheet_data.get("name") or f"Jadval {sheet_index}")
+        sheet_name = "".join(char for char in base_name if char not in '[]:*?/\\')[:31] or f"Jadval {sheet_index}"
+        worksheet = workbook.create_sheet(title=sheet_name)
+        worksheet.append([str(column)[:255] for column in columns])
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{max(len(rows) + 1, 1)}"
+
+        for cell in worksheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(fill_type="solid", fgColor="17365D")
+
+        for row in rows:
+            worksheet.append([
+                "'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")) else value
+                for value in row
+            ])
+
+        numeric_columns = [
+            column_index
+            for column_index in range(1, len(columns) + 1)
+            if any(
+                isinstance(row[column_index - 1], (int, float)) and not isinstance(row[column_index - 1], bool)
+                for row in rows
+            )
+        ]
+        if rows and numeric_columns:
+            total_row = worksheet.max_row + 1
+            average_row = total_row + 1
+            label_column = next(
+                (index for index in range(1, len(columns) + 1) if index not in numeric_columns),
+                None
+            )
+            if label_column is not None:
+                worksheet.cell(total_row, label_column, "Jami")
+                worksheet.cell(average_row, label_column, "O'rtacha")
+            first_data_row = 2
+            last_data_row = total_row - 1
+            for column_index in numeric_columns:
+                letter = get_column_letter(column_index)
+                worksheet.cell(total_row, column_index, f"=SUM({letter}{first_data_row}:{letter}{last_data_row})")
+                worksheet.cell(average_row, column_index, f"=AVERAGE({letter}{first_data_row}:{letter}{last_data_row})")
+            for row_index in (total_row, average_row):
+                for cell in worksheet[row_index]:
+                    cell.font = Font(bold=True)
+
+        for column_index, column_cells in enumerate(worksheet.columns, start=1):
+            max_length = max(
+                (len(str(cell.value)) for cell in column_cells if cell.value is not None),
+                default=len(str(columns[column_index - 1]))
+            )
+            worksheet.column_dimensions[get_column_letter(column_index)].width = min(max(max_length + 2, 12), 40)
+
+    filename = f"jadval_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.xlsx"
+    file_path = os.path.join(GENERATED_DIR, filename)
+    workbook.save(file_path)
+    return {
+        "filename": filename,
+        "download_url": f"/download/{filename}",
+        "topic": safe_topic,
+        "sheets": sheets,
+    }
 
 
 def generate_presentation(topic, custom_slides=None):

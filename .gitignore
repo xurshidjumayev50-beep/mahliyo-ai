@@ -1,3 +1,49 @@
-venv/
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Database & Environment
+*.db
+*.sqlite3
+.env
+.env.local
+static/generated/*.docx
+static/generated/*.pptx
+static/generated/*.xlsx
+static/generated/generated_*.png
+static/generated/generated_*.jpg
+static/generated/generated_*.webp
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

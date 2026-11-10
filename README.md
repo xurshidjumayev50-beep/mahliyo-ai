@@ -27,6 +27,7 @@
 - 📝 **Dasturlash Yordami:** Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Rust, PHP, Ruby, Swift, Kotlin, SQL, HTML va CSS kodlarini yozish hamda tahlil qilish.
 - 🗣️ **Ovozli O'qish (Text-to-Speech):** Mahliyo bergan javoblarni ovoz chiqarib o'qitish imkoniyati.
 - 📷 **Rasmni Tahlil va Generatsiya Qilish:** JPEG, PNG yoki WebP rasmini yuborib savol bering yoki yangi rasm yaratishni so'rang.
+- 🎬 **Video Generatsiya:** Gemini API kaliti orqali Veo 3.1 yordamida 8 soniyalik video yarating va MP4 formatida yuklab oling.
 - 📝 **Markdown va Kodlar Sintaksisi:** Kodlarni chiroyli ranglar bilan ajratib ko'rsatish va bir tugma bilan nusxa olish.
 - 💾 **Suhbatlar Tarixi (Persistent History):** Barcha yozishmalar saqlanib qoladi va istalgan vaqtda qayta ochilishi mumkin.
 - 🐳 **Docker & Docker Compose:** 1 ta buyruq bilan konteynerda ishga tushirishga to'liq tayyor.
@@ -76,7 +77,7 @@ python app.py
 ```
 Yoki Gunicorn orqali:
 ```bash
-gunicorn --bind 0.0.0.0:5000 app:app
+gunicorn --bind 0.0.0.0:5000 --timeout 600 app:app
 ```
 
 Serverni birinchi marta ishga tushirishdan oldin `.env` faylida `SECRET_KEY` uchun tasodifiy, maxfiy qiymat belgilang. Uni yaratish uchun:
@@ -101,7 +102,7 @@ Sidebar'dagi **Tarjima** paneli matnni avtomatik aniqlash yoki O'zbek lotin, O'z
 ## 🔑 API Kalitlarini Sozlash
 
 1. Oddiy matnli chat uchun [OpenRouter](https://openrouter.ai/keys) sahifasidan API kalit oling. `.env` faylida `OPENROUTER_API_KEY` qiymatini belgilang. Model `OPENROUTER_MODEL` orqali tanlanadi va faqat `:free` bilan tugaydigan model ishlatiladi.
-2. Gemini kalitini [Google AI Studio](https://aistudio.google.com/app/apikey) sahifasidan oling. Gemini kaliti OpenRouter ishlamagan paytdagi chat fallback'i, rasm tahlili/yaratish, qidiruv, tarjima va hujjat/jadval yaratish uchun kerak.
+2. Gemini kalitini [Google AI Studio](https://aistudio.google.com/app/apikey) sahifasidan oling. Gemini kaliti OpenRouter ishlamagan paytdagi chat fallback'i, rasm tahlili/yaratish, Veo video yaratish, qidiruv, tarjima va hujjat/jadval yaratish uchun kerak.
 3. Ikkala kalitni ham loyiha papkasidagi `.env` faylida saqlang. Yangi nusxada `.env.example` faylidan foydalaning; `.env` Git'ga qo'shilmaydi va Docker konteyneriga muhit o'zgaruvchisi sifatida uzatiladi. Sayt sozlamalaridagi Gemini kaliti ham qo'shimcha usul sifatida ishlaydi.
 ```env
 OPENROUTER_API_KEY=
@@ -111,7 +112,7 @@ GEMINI_API_KEY=AIzaSy...
 
 Kalitlarni o'zgartirgandan keyin Docker Compose'ni qayta ishga tushiring: `docker compose up -d`. Xavfsizlik uchun kodga kalit yozmang va terminal buyrug'i argumenti sifatida bermang.
 
-Rasmni tahlil qilish va yangi rasm yaratish uchun Gemini API kaliti shart. Yaratilgan rasm modeli (`gemini-3.1-flash-lite-image`) Google API kvotasi va tarif shartlariga muvofiq ishlaydi. Agar kalit chat yoki terminalda oshkor bo'lgan bo'lsa, Google AI Studio'da bekor qiling va yangisini yarating.
+Rasm/video yaratish uchun Gemini API kaliti shart. Rasm modeli (`gemini-3.1-flash-lite-image`) va video modeli (`veo-3.1-generate-preview`) Google API kvotasi, hisob mavjudligi va tarif shartlariga muvofiq ishlaydi. Video yaratish bir necha daqiqa olishi mumkin. Agar kalit chat yoki terminalda oshkor bo'lgan bo'lsa, Google AI Studio'da bekor qiling va yangisini yarating.
 
 ---
 

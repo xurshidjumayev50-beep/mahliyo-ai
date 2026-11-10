@@ -413,6 +413,152 @@ def generate_image(api_key, prompt):
     return artifact, None
 
 
+def is_video_generation_request(message):
+    query = message.lower()
+    phrases = (
+        "video yarat", "video yasab", "video tayyorla", "video qilib ber",
+        "video generatsiya", "rolik yarat", "rolik tayyorla", "veo bilan",
+        "generate a video", "create a video", "make a video", "make me a video",
+        "создай видео", "сгенерируй видео", "crée une vidéo", "erstelle ein video",
+    )
+    return any(phrase in query for phrase in phrases)
+
+
+def list_video_models(api_key):
+    headers = {"x-goog-api-key": api_key}
+    models = []
+    page_token = None
+    try:
+        for _ in range(10):
+            params = {"pageSize": 1000}
+            if page_token:
+                params["pageToken"] = page_token
+            response = requests.get(
+                "https://generativelanguage.googleapis.com/v1beta/models",
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            if response.status_code != 200:
+                return None, gemini_api_error(response, "Gemini video modellari")
+            data = response.json()
+            for model in data.get("models", []):
+                name = model.get("name", "")
+                methods = model.get("supportedGenerationMethods", [])
+                if "veo" in name.lower() and "predictLongRunning" in methods:
+                    models.append(name.removeprefix("models/"))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+    except (requests.RequestException, ValueError, AttributeError) as error:
+        return None, f"Gemini video modellarini tekshirib bo'lmadi: {type(error).__name__}"
+
+    priority = (
+        "veo-3.1-generate-preview",
+        "veo-3.1-fast-generate-preview",
+        "veo-3.0-generate-001",
+        "veo-3.0-generate-preview",
+        "veo-2.0-generate-001",
+    )
+    models.sort(key=lambda name: (priority.index(name) if name in priority else len(priority), name))
+    if not models:
+        return None, (
+            "Bu Gemini API kalitida predictLongRunning qo'llaydigan Veo modeli topilmadi. "
+            "Google AI Studio'da Veo API ruxsati, hisob va mintaqa mavjudligini tekshiring."
+        )
+    return models, None
+
+
+def generate_video(api_key, prompt):
+    """Generate an MP4 with Veo and save it under the generated-files directory."""
+    model_names, error = list_video_models(api_key)
+    if error:
+        return None, error
+
+    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+    response = None
+    model_name = None
+    for candidate in model_names:
+        try:
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:predictLongRunning",
+                headers=headers,
+                json={
+                    "instances": [{"prompt": prompt}],
+                    "parameters": {"aspectRatio": "16:9", "durationSeconds": 8},
+                },
+                timeout=60,
+            )
+        except requests.RequestException as error:
+            return None, f"Gemini video xizmatiga ulanib bo'lmadi: {type(error).__name__}"
+        if response.status_code == 200:
+            model_name = candidate
+            break
+        if response.status_code != 404:
+            return None, gemini_api_error(response, "Gemini video yaratish")
+
+    if response is None or response.status_code != 200:
+        return None, "Ro'yxatdagi Veo modellaridan hech biri video yaratish so'rovini qabul qilmadi."
+
+    try:
+        operation = response.json()
+        operation_name = operation.get("name")
+    except (ValueError, AttributeError):
+        return None, "Veo video yaratish so'rovining javobini o'qib bo'lmadi."
+    if not isinstance(operation_name, str) or not re.fullmatch(r"operations/[A-Za-z0-9._:-]+", operation_name):
+        return None, "Veo video yaratish amalining identifikatori noto'g'ri."
+
+    deadline = time.monotonic() + 480
+    while not operation.get("done") and time.monotonic() < deadline:
+        time.sleep(5)
+        try:
+            status_response = requests.get(
+                f"https://generativelanguage.googleapis.com/v1beta/{operation_name}",
+                headers=headers,
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            return None, f"Veo video holatini tekshirishda xatolik: {type(error).__name__}"
+        if status_response.status_code != 200:
+            return None, gemini_api_error(status_response, "Veo video holatini tekshirish")
+        try:
+            operation = status_response.json()
+        except ValueError:
+            return None, "Veo video holati javobini o'qib bo'lmadi."
+
+    if not operation.get("done"):
+        return None, "Video yaratish 8 daqiqada yakunlanmadi. Keyinroq qayta urinib ko'ring."
+    if operation.get("error"):
+        return None, f"Veo video yaratishni yakunlay olmadi: {operation['error'].get('message', 'Noma’lum xatolik')}"
+
+    try:
+        samples = operation["response"]["generateVideoResponse"]["generatedSamples"]
+        video_uri = samples[0]["video"]["uri"]
+    except (KeyError, IndexError, TypeError):
+        return None, "Veo tayyor videoni javobda qaytarmadi."
+
+    try:
+        video_response = requests.get(video_uri, headers={"x-goog-api-key": api_key}, timeout=120)
+    except requests.RequestException as error:
+        return None, f"Yaratilgan videoni yuklab olib bo'lmadi: {type(error).__name__}"
+    if video_response.status_code != 200:
+        return None, gemini_api_error(video_response, "Yaratilgan videoni yuklab olish")
+    video_data = video_response.content
+    if not video_data or len(video_data) > 100 * 1024 * 1024:
+        return None, "Veo qaytargan video bo'sh yoki 100 MB hajm limitidan katta."
+
+    filename = f"generated_{uuid.uuid4().hex}.mp4"
+    with open(os.path.join(GENERATED_DIR, filename), "wb") as video_file:
+        video_file.write(video_data)
+    return {
+        "type": "video",
+        "model": model_name,
+        "file_url": f"/download/{filename}",
+        "media_url": f"/media/{filename}",
+        "filename": filename,
+    }, None
+
+
 def is_image_generation_request(message):
     query = message.lower()
     phrases = (
@@ -829,6 +975,21 @@ def chat():
         else:
             message = f"{message} mavzusida mustaqil ish yozib ber"
 
+    if is_video_generation_request(message):
+        if not api_key or not api_key.strip():
+            return jsonify({
+                "error": "Video yaratish uchun Gemini API kaliti kerak. Sozlamalardan Google AI Studio kalitini kiriting."
+            }), 401
+        artifact, error = generate_video(api_key.strip(), message)
+        if error:
+            return jsonify({"error": error}), 502
+        return jsonify({
+            "reply": "Video tayyor.",
+            "provider": "gemini",
+            "model": artifact["model"],
+            "artifact": artifact,
+        })
+
     if is_image_generation_request(message):
         if not api_key or not api_key.strip():
             return jsonify({
@@ -958,6 +1119,7 @@ def chat_stream():
     if (
         data.get("image")
         or data.get("images")
+        or is_video_generation_request(message)
         or is_image_generation_request(message)
         or any(intent in message.lower() for intent in artifact_intents)
         or pending_artifact_from_history(history)
@@ -1116,6 +1278,11 @@ def download_file(filename):
     return send_from_directory(GENERATED_DIR, filename, as_attachment=True)
 
 
+@app.route("/media/<path:filename>")
+def view_generated_media(filename):
+    return send_from_directory(GENERATED_DIR, filename, as_attachment=False)
+
+
 @app.route("/api/conversations", methods=["GET"])
 def list_conversations():
     conn = get_db()
@@ -1255,7 +1422,7 @@ def health():
         "app": "Mahliyo AI",
         "version": "1.4.0",
         "features": [
-            "Chat", "Image understanding", "Image generation", "Programming assistance",
+            "Chat", "Image understanding", "Image generation", "Video generation", "Programming assistance",
             "Language matching", "Presentation PPTX", "Word DOCX",
             "Voice Recognition", "Speech Synthesis"
         ],

@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const quickSlideBtn = document.getElementById('quickSlideBtn');
   const quickDocBtn = document.getElementById('quickDocBtn');
   const quickExcelBtn = document.getElementById('quickExcelBtn');
+  const quickImageBtn = document.getElementById('quickImageBtn');
+  const quickVideoBtn = document.getElementById('quickVideoBtn');
   const openTranslatorBtn = document.getElementById('openTranslatorBtn');
   const translatorModal = document.getElementById('translatorModal');
   const closeTranslatorBtn = document.getElementById('closeTranslatorBtn');
@@ -534,6 +536,15 @@ document.addEventListener('DOMContentLoaded', () => {
               </a>
             </div>
           `;
+        } else if (artifact.type === 'video') {
+          artifactHtml = `
+            <div class="generated-image-card generated-video-card">
+              <video controls preload="metadata" src="${escapeHtml(artifact.media_url)}" aria-label="Mahliyo yaratgan video"></video>
+              <a href="${escapeHtml(artifact.file_url)}" download="${escapeHtml(artifact.filename || 'mahliyo-video.mp4')}">
+                Videoni yuklab olish
+              </a>
+            </div>
+          `;
         }
       }
 
@@ -879,6 +890,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const topic = prompt("Excel jadval mavzusini kiriting:", "Oylik daromad va xarajatlar");
     if (topic && topic.trim()) {
       messageInput.value = `Excel jadval tuzib ber: ${topic.trim()}`;
+      handleSend();
+    }
+  });
+
+  quickImageBtn.addEventListener('click', () => {
+    closeMobileSidebar();
+    const prompt = window.prompt("Qanday rasm yaratilsin?", "Tog'lar ustidagi quyosh botishi, fotorealistik uslubda");
+    if (prompt && prompt.trim()) {
+      messageInput.value = `Rasm yarat: ${prompt.trim()}`;
+      handleSend();
+    }
+  });
+
+  quickVideoBtn.addEventListener('click', () => {
+    closeMobileSidebar();
+    const prompt = window.prompt("Qanday video yaratilsin?", "Tog'lar ustidan uchayotgan burgut, kinematik uslubda");
+    if (prompt && prompt.trim()) {
+      messageInput.value = `Video yarat: ${prompt.trim()}`;
       handleSend();
     }
   });

@@ -657,6 +657,14 @@ body {
   object-fit: contain;
 }
 
+.generated-video-card video {
+  display: block;
+  width: min(100%, 640px);
+  aspect-ratio: 16 / 9;
+  background: #080a18;
+  border-radius: 8px;
+}
+
 .generated-image-card a {
   display: inline-block;
   margin-top: 8px;

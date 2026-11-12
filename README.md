@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <b>Mahliyo</b> — Gemini va ChatGPT kabi ilg'or imkoniyatlarga ega, o'zbek tilida tabiiy va ravon muloqot qiluvchi zamonaviy sun'iy intellekt platformasi.
+  <b>Mahliyo</b> — OpenRouter orqali ilg'or sun'iy intellekt modellariga ulangan, o'zbek tilida tabiiy va ravon muloqot qiluvchi platforma.
 </p>
 
 <p align="center">
@@ -21,18 +21,18 @@
 ## ✨ Asosiy Xususiyatlari
 
 - 🌌 **Premium Ko'k Midnight Dizayn:** Haqiqiy milliy naqshlar (geometric Islamic pattern) bilan bezatilgan shinam va zamonaviy ko'k UI interfeysi.
-- ⚡ **Tezkor va Ravon Muloqot:** Google Gemini 3.5 Flash integratsiyasi; foydalanuvchi yozgan tilda javob beradi.
-- 💬 **So'zma-so'z javoblar:** Oddiy chat Gemini SSE oqimi orqali matnni darhol ko'rsatadi; rasm va fayl yaratish amallari mavjud endpointdan foydalanadi.
-- 🔑 **Gemini API Kaliti:** Oddiy AI suhbati, rasm tahlili va rasm yaratish uchun Google AI Studio kaliti talab qilinadi. Kalitsiz ham slayd va Word fayllarini tayyorlash hamda mavzu bo'yicha savollarga javob berish mumkin.
+- ⚡ **Tezkor va Ravon Muloqot:** OpenRouter orqali turli chat va vision modellarini tanlash mumkin.
+- 💬 **So'zma-so'z javoblar:** OpenRouter SSE oqimi matnni darhol ko'rsatadi; qidiruv, rasm va video ham OpenRouter orqali ishlaydi.
+- 🔑 **OpenRouter API Kaliti:** Chat, qidiruv, tarjima, rasm va video uchun yagona server kaliti ishlatiladi.
 - 📝 **Dasturlash Yordami:** Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Rust, PHP, Ruby, Swift, Kotlin, SQL, HTML va CSS kodlarini yozish hamda tahlil qilish.
 - 🗣️ **Ovozli O'qish (Text-to-Speech):** Mahliyo bergan javoblarni ovoz chiqarib o'qitish imkoniyati.
 - 📷 **Rasmni Tahlil va Generatsiya Qilish:** JPEG, PNG yoki WebP rasmini yuborib savol bering yoki yangi rasm yaratishni so'rang.
-- 🎬 **Video Generatsiya:** Gemini API kaliti orqali Veo 3.1 yordamida 8 soniyalik video yarating va MP4 formatida yuklab oling.
+- 🎬 **Video Generatsiya:** OpenRouter video modeli orqali video yarating va MP4 formatida yuklab oling.
 - 📝 **Markdown va Kodlar Sintaksisi:** Kodlarni chiroyli ranglar bilan ajratib ko'rsatish va bir tugma bilan nusxa olish.
 - 💾 **Suhbatlar Tarixi (Persistent History):** Barcha yozishmalar saqlanib qoladi va istalgan vaqtda qayta ochilishi mumkin.
 - 🐳 **Docker & Docker Compose:** 1 ta buyruq bilan konteynerda ishga tushirishga to'liq tayyor.
 - 💾 **Doimiy ma'lumotlar:** Suhbatlar va yaratilgan fayllar Docker volume'da saqlanadi.
-- 📈 **Excel jadval yaratish:** Gemini tuzgan ma'lumotlar .xlsx faylga, sarlavha uslubi va jamlash/o'rtacha formulalari bilan yoziladi.
+- 📈 **Excel jadval yaratish:** OpenRouter tuzgan ma'lumotlar .xlsx faylga, sarlavha uslubi va jamlash/o'rtacha formulalari bilan yoziladi.
 
 ---
 
@@ -71,21 +71,24 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. **Serverni yoqing:**
+3. **`.env` faylida `MAHLIYO_API_KEY` va `OPENROUTER_API_KEY` ni sozlang.** Ilova kalitini quyidagi buyruq bilan yarating:
 ```bash
-python app.py
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
-Yoki Gunicorn orqali:
+
+4. **FastAPI serverni yoqing:**
 ```bash
-gunicorn --bind 0.0.0.0:5000 --timeout 600 app:app
+uvicorn api:api --host 0.0.0.0 --port 5000 --timeout-keep-alive 600
 ```
+
+API hujjatlari `http://localhost:5000/docs` manzilida. API manzillari: `POST /v1/chat`, `POST /v1/generate/image`, `POST /v1/generate/video` va `GET /v1/health`. Yozish va generatsiya so'rovlari `X-API-Key` sarlavhasida `.env` dagi `MAHLIYO_API_KEY` ni talab qiladi; model API kaliti serverda `OPENROUTER_API_KEY` sifatida qoladi. Eski web interfeys `http://localhost:5000/` va `/api/*` yo'llarida ishlashda davom etadi.
 
 Serverni birinchi marta ishga tushirishdan oldin `.env` faylida `SECRET_KEY` uchun tasodifiy, maxfiy qiymat belgilang. Uni yaratish uchun:
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Oddiy matnli suhbatlar `POST /api/chat/stream` orqali OpenRouter SSE oqimida keladi; OpenRouter ishlamasa, server Gemini'ga qaytadi. Rasm, slayd, Word va qo'llab-quvvatlanmaydigan javoblar uchun brauzer avtomatik `POST /api/chat` endpointiga qaytadi; javob yozilayotganda **To'xtatish** tugmasi oqimni bekor qiladi.
+Oddiy matnli suhbatlar `POST /api/chat/stream` orqali OpenRouter SSE oqimida keladi. Qidiruv, rasm, video va spreadsheet mazmuni ham OpenRouter orqali ishlaydi; javob yozilayotganda **To'xtatish** tugmasi oqimni bekor qiladi.
 
 Yozish maydoni yonidagi **🌐 Internet** tugmasi Google Search grounding'ni yoqadi yoki o'chiradi; tanlov brauzer xotirasida saqlanadi. Yoqilganda oddiy chat javoblari manbalarni ko'rsatadi. Rasm va slayd/Word/Excel yaratish oqimlari internet qidiruvidan foydalanmaydi.
 
@@ -95,24 +98,29 @@ Sidebar pastidagi **Kirish** orqali email va parol bilan akkaunt yarating yoki t
 
 `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` va `/api/auth/me` autentifikatsiya endpointlari hisoblanadi. `/api/conversations` endpointlari faqat joriy akkaunt suhbatlariga yoki mehmon rejimida akkauntga biriktirilmagan eski suhbatlarga ruxsat beradi.
 
-Sidebar'dagi **Tarjima** paneli matnni avtomatik aniqlash yoki O'zbek lotin, O'zbek kirill, Ingliz, Rus va Turk tillari orasida tarjima qiladi. `POST /api/translate` endpointi 5 000 belgidan uzun matnni bo'laklarga ajratadi; tarjima uchun serverdagi `GEMINI_API_KEY` ishlatiladi.
+Sidebar'dagi **Tarjima** paneli matnni avtomatik aniqlash yoki O'zbek lotin, O'zbek kirill, Ingliz, Rus va Turk tillari orasida tarjima qiladi. `POST /api/translate` endpointi 5 000 belgidan uzun matnni bo'laklarga ajratadi; tarjima uchun serverdagi `OPENROUTER_API_KEY` ishlatiladi.
 
 ---
 
 ## 🔑 API Kalitlarini Sozlash
 
-1. Oddiy matnli chat uchun [OpenRouter](https://openrouter.ai/keys) sahifasidan API kalit oling. `.env` faylida `OPENROUTER_API_KEY` qiymatini belgilang. Model `OPENROUTER_MODEL` orqali tanlanadi va faqat `:free` bilan tugaydigan model ishlatiladi.
-2. Gemini kalitini [Google AI Studio](https://aistudio.google.com/app/apikey) sahifasidan oling. Gemini kaliti OpenRouter ishlamagan paytdagi chat fallback'i, rasm tahlili/yaratish, Veo video yaratish, qidiruv, tarjima va hujjat/jadval yaratish uchun kerak.
-3. Ikkala kalitni ham loyiha papkasidagi `.env` faylida saqlang. Yangi nusxada `.env.example` faylidan foydalaning; `.env` Git'ga qo'shilmaydi va Docker konteyneriga muhit o'zgaruvchisi sifatida uzatiladi. Sayt sozlamalaridagi Gemini kaliti ham qo'shimcha usul sifatida ishlaydi.
+Mahliyo ilovasining barcha foydalanuvchilar uchun umumiy kunlik AI so'rovi limiti `DAILY_AI_LIMIT` bilan belgilanadi; standart qiymati `10000`. Hisob UTC bo'yicha yuritiladi va har kuni 00:00 UTC da yangilanadi. Bu ilova ichidagi limit; OpenRouter krediti va model rate-limitlarini oshirmaydi.
+
+1. API kalitini [OpenRouter](https://openrouter.ai/keys) sahifasidan oling va `.env` faylidagi `OPENROUTER_API_KEY` qiymatiga kiriting. U chat, qidiruv, tarjima, rasm va video uchun ishlatiladi.
+2. `OPENROUTER_MODEL`, `OPENROUTER_VISION_MODEL`, `OPENROUTER_IMAGE_MODEL` va `OPENROUTER_VIDEO_MODEL` orqali modellarni tanlang. Model mavjudligi, imkoniyatlari va narxi OpenRouter katalogiga bog'liq; rasm/video yaratish OpenRouter kreditini sarflashi mumkin.
+3. Kalitni faqat loyiha papkasidagi `.env` faylida saqlang. `.env.example` faqat namuna; maxfiy kalitni unga, Git'ga yoki brauzer xotirasiga qo'shmang. Docker Compose konteynerga `.env` qiymatlarini uzatadi.
 ```env
 OPENROUTER_API_KEY=
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-GEMINI_API_KEY=AIzaSy...
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_VISION_MODEL=openrouter/free
+OPENROUTER_IMAGE_MODEL=google/gemini-3.1-flash-image
+OPENROUTER_VIDEO_MODEL=google/veo-3.1-lite
+CHAT_PROVIDER=openrouter
 ```
 
 Kalitlarni o'zgartirgandan keyin Docker Compose'ni qayta ishga tushiring: `docker compose up -d`. Xavfsizlik uchun kodga kalit yozmang va terminal buyrug'i argumenti sifatida bermang.
 
-Rasm/video yaratish uchun Gemini API kaliti shart. Rasm modeli (`gemini-3.1-flash-lite-image`) va video modeli (`veo-3.1-generate-preview`) Google API kvotasi, hisob mavjudligi va tarif shartlariga muvofiq ishlaydi. Video yaratish bir necha daqiqa olishi mumkin. Agar kalit chat yoki terminalda oshkor bo'lgan bo'lsa, Google AI Studio'da bekor qiling va yangisini yarating.
+Video yaratish OpenRouter asinxron job, polling va content endpointlaridan foydalanadi; tayyor MP4 bir necha daqiqa olishi mumkin. Barcha model so'rovlari OpenRouter krediti va tanlangan model tarifiga bo'ysunadi. Kalit oshkor bo'lgan bo'lsa, OpenRouter'da bekor qilib yangisini yarating.
 
 ---
 

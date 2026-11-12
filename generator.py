@@ -6,6 +6,7 @@ Specialized for Uzbek academic and professional standards.
 import os
 import uuid
 import datetime
+import html
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -123,67 +124,8 @@ def generate_presentation(topic, custom_slides=None):
     c_white = RGBColor(255, 255, 255)   # White
     c_muted = RGBColor(148, 163, 184)   # Slate Muted
 
-    # Default slide structure if none provided
-    if not custom_slides or len(custom_slides) == 0:
-        custom_slides = [
-            {
-                "type": "title",
-                "title": topic.upper(),
-                "subtitle": "Professional taqdimot va loyiha tahlili",
-                "author": "Mahliyo AI tomonidan shakllantirildi",
-                "date": datetime.datetime.now().strftime("%d.%m.%Y")
-            },
-            {
-                "type": "content",
-                "title": "Taqdimot Rejasi",
-                "items": [
-                    "1. Mavzuning dolzarbligi va maqsadi",
-                    "2. Asosiy nazariy tushunchalar va tamoyillar",
-                    "3. Amaliy tahlil va real tajriba",
-                    "4. Innovatsion takliflar va yechimlar",
-                    "5. Xulosa va kelajak istiqbollari"
-                ]
-            },
-            {
-                "type": "content",
-                "title": "Mavzuning Dolzarbligi",
-                "items": [
-                    "Zamonaviy taraqqiyot sharoitida ushbu sohaning o'rni beqiyos.",
-                    "Samaradorlikni oshirish va resurslarni optimallashtirish talabi.",
-                    "Raqamli transformatsiya va yangi texnologiyalar integratsiyasi.",
-                    "Xalqaro andozalar va O'zbekiston amaliyotini o'zaro uyg'unlashtirish."
-                ]
-            },
-            {
-                "type": "content",
-                "title": "Asosiy Vazifalar va Yechimlar",
-                "items": [
-                    "Tizimli yondashuv asosida muammolarni bosqichma-bosqich yechish.",
-                    "Avtomatlashtirish vositalari orqali xatolarni 40% ga kamaytirish.",
-                    "Foydalanuvchilar va mutaxassislar uchun qulay vositalar yaratish.",
-                    "Xavfsizlik va barqarorlik tamoyillariga qat'iy rioya etish."
-                ]
-            },
-            {
-                "type": "content",
-                "title": "Kutilayotgan Natijalar",
-                "items": [
-                    "Ish unumdorligi va tezkorlikning sezilarli darajada ortishi.",
-                    "Axborot almashinuvi va monitoring jarayonining shaffofligi.",
-                    "Xarajatlarni tejang va strategik maqsadlarga erishish.",
-                    "Kelgusida tizimni kengaytirish uchun mustahkam poydevor."
-                ]
-            },
-            {
-                "type": "conclusion",
-                "title": "Xulosa va Tavsiyalar",
-                "subtitle": "E'tiboringiz uchun rahmat!",
-                "items": [
-                    "Taklif etilgan usullar amaliyotda yuqori samara beradi.",
-                    "Savol va takliflaringiz bo'lsa, mamnuniyat bilan javob beramiz."
-                ]
-            }
-        ]
+    if not isinstance(custom_slides, list) or len(custom_slides) < 11:
+        raise ValueError("Taqdimot uchun titul, reja, kamida 7 asosiy slayd, xulosa va adabiyotlar kerak.")
 
     for slide_data in custom_slides:
         slide = prs.slides.add_slide(blank_layout)
@@ -223,12 +165,18 @@ def generate_presentation(topic, custom_slides=None):
             p2.space_before = Pt(14)
 
             p3 = tf.add_paragraph()
-            author_text = f"{slide_data.get('author', 'Mahliyo AI')} • {slide_data.get('date', '')}"
-            p3.text = author_text
+            p3.text = (
+                f"Bajardi: {slide_data.get('author', 'Talaba')}\n"
+                f"Tekshirdi: {slide_data.get('reviewer', "O'qituvchi")}\n"
+                f"Fan: {slide_data.get('subject', "Mustaqil ta'lim")}\n"
+                f"Universitet / guruh: {slide_data.get('university', "O'zbekiston Milliy Universiteti")} / "
+                f"{slide_data.get('group', 'Talaba')}\n"
+                f"{slide_data.get('city', 'Toshkent')} — {slide_data.get('year', datetime.datetime.now().year)}"
+            )
             p3.alignment = PP_ALIGN.CENTER
-            p3.font.size = Pt(14)
+            p3.font.size = Pt(11)
             p3.font.color.rgb = c_muted
-            p3.space_before = Pt(24)
+            p3.space_before = Pt(12)
 
         else:
             # Header Title Box
@@ -257,9 +205,9 @@ def generate_presentation(topic, custom_slides=None):
             for i, item in enumerate(items):
                 p = tf_content.paragraphs[0] if i == 0 else tf_content.add_paragraph()
                 p.text = f"• {item}"
-                p.font.size = Pt(20)
+                p.font.size = Pt(15)
                 p.font.color.rgb = c_white
-                p.space_after = Pt(14)
+                p.space_after = Pt(5)
 
             if slide_type == "conclusion" and slide_data.get("subtitle"):
                 sub_p = tf_content.add_paragraph()
@@ -284,7 +232,18 @@ def generate_presentation(topic, custom_slides=None):
     }
 
 
-def generate_mustaqil_ish_doc(topic, subject=None, student=None, teacher=None, university=None, faculty=None):
+def generate_mustaqil_ish_doc(
+    topic,
+    subject=None,
+    student=None,
+    teacher=None,
+    university=None,
+    faculty=None,
+    academic_content=None,
+    group=None,
+    city=None,
+    year=None,
+):
     """
     Generates a high-quality Academic Research Paper / Mustaqil ish (.docx)
     strictly formatted to Uzbek OTM standards:
@@ -294,6 +253,21 @@ def generate_mustaqil_ish_doc(topic, subject=None, student=None, teacher=None, u
     - Reja / Mundarija
     - Kirish, 3 ta asosiy qism / boblar, Xulosa, Adabiyotlar
     """
+    if academic_content is None:
+        raise ValueError("Mustaqil ish shablon bilan emas, to'liq akademik mazmun bilan yaratilishi kerak.")
+    return generate_mustaqil_ish_doc_content(
+        topic,
+        academic_content,
+        subject=subject,
+        student=student,
+        teacher=teacher,
+        university=university,
+        faculty=faculty,
+        group=group,
+        city=city,
+        year=year,
+    )
+
     subject = subject or "Axborot Texnologiyalari va Dasturlash"
     student = student or "Talaba"
     teacher = teacher or "O'qituvchi"
@@ -618,4 +592,170 @@ def generate_mustaqil_ish_doc(topic, subject=None, student=None, teacher=None, u
         "teacher": teacher,
         "university": university,
         "html_preview": html_preview
+    }
+
+
+def generate_mustaqil_ish_doc_content(
+    topic,
+    academic_content,
+    subject=None,
+    student=None,
+    teacher=None,
+    university=None,
+    faculty=None,
+    group=None,
+    city=None,
+    year=None,
+):
+    if not isinstance(academic_content, dict):
+        raise ValueError("Mustaqil ish uchun to'liq akademik mazmun kerak.")
+    introduction = academic_content.get("introduction")
+    chapters = academic_content.get("chapters")
+    conclusion = academic_content.get("conclusion")
+    bibliography = academic_content.get("bibliography")
+    if (
+        not isinstance(introduction, list)
+        or len(introduction) < 2
+        or not isinstance(chapters, list)
+        or len(chapters) < 3
+        or not isinstance(conclusion, list)
+        or len(conclusion) < 2
+        or not isinstance(bibliography, list)
+        or len(bibliography) < 3
+    ):
+        raise ValueError("Mustaqil ishda kirish, 3 bob, xulosa va adabiyotlar bo'lishi kerak.")
+
+    word_count = sum(len(paragraph.split()) for paragraph in introduction + conclusion if isinstance(paragraph, str))
+    for chapter in chapters:
+        subsections = chapter.get("sections") if isinstance(chapter, dict) else None
+        if not isinstance(subsections, list) or len(subsections) < 2:
+            raise ValueError("Har bir bobda kamida ikkita bo'lim bo'lishi kerak.")
+        for subsection in subsections:
+            paragraphs = subsection.get("paragraphs") if isinstance(subsection, dict) else None
+            if not isinstance(paragraphs, list) or len(paragraphs) < 2:
+                raise ValueError("Har bir bo'limda kamida ikkita to'liq abzats bo'lishi kerak.")
+            word_count += sum(len(paragraph.split()) for paragraph in paragraphs if isinstance(paragraph, str))
+    if not 3000 <= word_count <= 4000:
+        raise ValueError(f"Mustaqil ish hajmi {word_count} so'z; talab 3000–4000 so'z.")
+
+    subject = subject or "Mustaqil ta'lim"
+    student = student or "Talaba"
+    teacher = teacher or "O'qituvchi"
+    university = university or "Universitet ko'rsatilmagan"
+    faculty = faculty or "Fakultet ko'rsatilmagan"
+    group = group or "Guruh ko'rsatilmagan"
+    city = city or "Shahar ko'rsatilmagan"
+    year = year or datetime.datetime.now().year
+
+    doc = docx.Document()
+    for section in doc.sections:
+        section.top_margin = DocInches(0.79)
+        section.bottom_margin = DocInches(0.79)
+        section.left_margin = DocInches(1.18)
+        section.right_margin = DocInches(0.59)
+
+    normal_style = doc.styles["Normal"]
+    normal_style.font.name = "Times New Roman"
+    normal_style.font.size = DocPt(14)
+
+    def add_text(text, alignment=WD_ALIGN_PARAGRAPH.JUSTIFY, bold=False, size=14, line_spacing=1.5):
+        paragraph = doc.add_paragraph()
+        paragraph.alignment = alignment
+        paragraph.paragraph_format.line_spacing = line_spacing
+        paragraph.paragraph_format.space_after = DocPt(6)
+        run = paragraph.add_run(text)
+        run.bold = bold
+        run.font.name = "Times New Roman"
+        run.font.size = DocPt(size)
+        return paragraph
+
+    def add_heading(text, level=1):
+        add_text(
+            text,
+            alignment=WD_ALIGN_PARAGRAPH.CENTER if level == 1 else WD_ALIGN_PARAGRAPH.LEFT,
+            bold=True,
+            size=15 if level == 1 else 14,
+            line_spacing=1.2,
+        )
+
+    add_text("O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA INNOVATSIYALAR VAZIRLIGI", bold=True, size=13, line_spacing=1.2)
+    add_text(university.upper(), bold=True, size=13, line_spacing=1.2)
+    add_text(faculty, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=12, line_spacing=1.2)
+    add_text("MUSTAQIL ISH", alignment=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=24, line_spacing=1.2)
+    add_text(f"Fani: {subject}", alignment=WD_ALIGN_PARAGRAPH.CENTER, bold=True)
+    add_text(f"Mavzu: {topic}", alignment=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=16)
+    add_text(f"Bajardi: {student}\nTekshirdi: {teacher}\nGuruh: {group}", alignment=WD_ALIGN_PARAGRAPH.RIGHT, line_spacing=1.2)
+    add_text(f"{city} — {year}", alignment=WD_ALIGN_PARAGRAPH.CENTER, bold=True, size=13)
+    doc.add_page_break()
+
+    add_heading("MUNDARIJA")
+    outline = ["KIRISH"]
+    for chapter in chapters:
+        outline.append(chapter["title"])
+        outline.extend(subsection["title"] for subsection in chapter["sections"])
+    outline.extend(["XULOSA", "FOYDALANILGAN ADABIYOTLAR"])
+    for item in outline:
+        add_text(item, alignment=WD_ALIGN_PARAGRAPH.LEFT, size=13, line_spacing=1.2)
+    doc.add_page_break()
+
+    add_heading("KIRISH")
+    for paragraph in introduction:
+        add_text(paragraph)
+    for chapter in chapters:
+        add_heading(chapter["title"])
+        for subsection in chapter["sections"]:
+            add_heading(subsection["title"], level=2)
+            for paragraph in subsection["paragraphs"]:
+                add_text(paragraph)
+    add_heading("XULOSA")
+    for paragraph in conclusion:
+        add_text(paragraph)
+    add_heading("FOYDALANILGAN ADABIYOTLAR")
+    for index, source in enumerate(bibliography, start=1):
+        add_text(f"{index}. {source}", alignment=WD_ALIGN_PARAGRAPH.LEFT, size=13, line_spacing=1.2)
+
+    filename = f"mustaqil_ish_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.docx"
+    doc.save(os.path.join(GENERATED_DIR, filename))
+
+    preview = [
+        '<div class="word-doc-paper">',
+        '<div class="word-header-center">',
+        f"<p><strong>{html.escape(university)}</strong></p>",
+        f"<p>{html.escape(faculty)}</p>",
+        "</div>",
+        '<div class="word-title-block">',
+        "<h1>MUSTAQIL ISH</h1>",
+        f"<p><strong>Fani:</strong> {html.escape(subject)}</p>",
+        f"<p><strong>Mavzu:</strong> {html.escape(topic)}</p>",
+        "</div>",
+        f"<p><strong>Bajardi:</strong> {html.escape(student)}</p>",
+        f"<p><strong>Tekshirdi:</strong> {html.escape(teacher)}</p>",
+        f"<p><strong>Guruh:</strong> {html.escape(group)}</p>",
+        f"<p><strong>{html.escape(city)} — {year}</strong></p><hr>",
+        "<h2>MUNDARIJA</h2><ol>",
+    ]
+    preview.extend(f"<li>{html.escape(item)}</li>" for item in outline)
+    preview.append("</ol><hr><h2>KIRISH</h2>")
+    preview.extend(f"<p>{html.escape(paragraph)}</p>" for paragraph in introduction)
+    for chapter in chapters:
+        preview.append(f"<h2>{html.escape(chapter['title'])}</h2>")
+        for subsection in chapter["sections"]:
+            preview.append(f"<h3>{html.escape(subsection['title'])}</h3>")
+            preview.extend(f"<p>{html.escape(paragraph)}</p>" for paragraph in subsection["paragraphs"])
+    preview.append("<h2>XULOSA</h2>")
+    preview.extend(f"<p>{html.escape(paragraph)}</p>" for paragraph in conclusion)
+    preview.append("<h2>FOYDALANILGAN ADABIYOTLAR</h2><ol>")
+    preview.extend(f"<li>{html.escape(source)}</li>" for source in bibliography)
+    preview.append("</ol></div>")
+
+    return {
+        "filename": filename,
+        "download_url": f"/download/{filename}",
+        "topic": topic,
+        "subject": subject,
+        "student": student,
+        "teacher": teacher,
+        "university": university,
+        "html_preview": "\n".join(preview),
+        "word_count": word_count,
     }

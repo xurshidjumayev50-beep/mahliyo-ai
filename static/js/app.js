@@ -76,9 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const topSettingsBtn = document.getElementById('topSettingsBtn');
   const closeSettingsBtn = document.getElementById('closeSettingsBtn');
   const settingsModal = document.getElementById('settingsModal');
-  const geminiApiKeyInput = document.getElementById('geminiApiKey');
-  const toggleApiKeyVisBtn = document.getElementById('toggleApiKeyVisBtn');
-  const modelSelect = document.getElementById('modelSelect');
+  const openrouterModelInput = document.getElementById('openrouterModelInput');
   const systemPromptInput = document.getElementById('systemPromptInput');
   const saveSettingsBtn = document.getElementById('saveSettingsBtn');
   const testKeyBtn = document.getElementById('testKeyBtn');
@@ -246,29 +244,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- LocalStorage Helpers ---
   function loadStoredSettings() {
-    const key = localStorage.getItem('mahliyo_gemini_key') || '';
-    const savedModel = localStorage.getItem('mahliyo_model');
-    const model = savedModel === 'gemini-3.5-flash'
-      ? savedModel
-      : 'gemini-3.5-flash';
+    localStorage.removeItem('mahliyo_gemini_key');
+    localStorage.removeItem('mahliyo_model');
+    const savedModel = localStorage.getItem('mahliyo_openrouter_model');
+    const model = !savedModel || [
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemma-4-26b-a4b-it:free'
+    ].includes(savedModel)
+      ? 'openrouter/free'
+      : savedModel;
     const prompt = localStorage.getItem('mahliyo_system_prompt') || '';
 
-    localStorage.setItem('mahliyo_model', model);
-    geminiApiKeyInput.value = key;
-    modelSelect.value = model;
+    localStorage.setItem('mahliyo_openrouter_model', model);
+    openrouterModelInput.value = model;
     systemPromptInput.value = prompt;
 
-    updateModelTag(key, model);
+    updateModelTag(model);
   }
 
-  function updateModelTag(key, model) {
-    if (key && key.trim()) {
-      modelStatusTag.textContent = model.replace('gemini-', 'Gemini ').split('-')[0] + ' (Faol)';
-      modelStatusTag.style.color = 'var(--color-primary)';
-    } else {
-      modelStatusTag.textContent = 'Mahliyo v1.4 · .env kaliti';
-      modelStatusTag.style.color = '#fbbf24';
-    }
+  function updateModelTag(model) {
+    modelStatusTag.textContent = `${model.split('/').pop().split(':')[0]} · OpenRouter`;
+    modelStatusTag.style.color = 'var(--color-primary)';
   }
 
   function loadGuestConversations() {
@@ -1119,8 +1115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     scrollChatToBottom();
 
     // Prepare API payload
-    const apiKey = localStorage.getItem('mahliyo_gemini_key') || '';
-    const modelName = localStorage.getItem('mahliyo_model') || 'gemini-3.5-flash';
+    const modelName = localStorage.getItem('mahliyo_openrouter_model') || 'openrouter/free';
     const systemPrompt = localStorage.getItem('mahliyo_system_prompt') || '';
 
     let streamingRow = null;
@@ -1132,7 +1127,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = {
         message: finalPrompt,
         history: currentChat.messages.slice(0, -1),
-        api_key: apiKey,
         model_name: modelName,
         system_prompt: systemPrompt,
         image: imagePayload,
@@ -1433,31 +1427,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === authModal) closeAuthModal();
   });
 
-  toggleApiKeyVisBtn.addEventListener('click', () => {
-    if (geminiApiKeyInput.type === 'password') {
-      geminiApiKeyInput.type = 'text';
-      toggleApiKeyVisBtn.textContent = "Yashirish";
-    } else {
-      geminiApiKeyInput.type = 'password';
-      toggleApiKeyVisBtn.textContent = "Ko'rish";
-    }
-  });
-
   saveSettingsBtn.addEventListener('click', () => {
-    const key = geminiApiKeyInput.value.trim();
-    const model = modelSelect.value;
+    const model = openrouterModelInput.value.trim() || 'openrouter/free';
     const prompt = systemPromptInput.value.trim();
 
-    localStorage.setItem('mahliyo_gemini_key', key);
-    localStorage.setItem('mahliyo_model', model);
+    localStorage.setItem('mahliyo_openrouter_model', model);
     localStorage.setItem('mahliyo_system_prompt', prompt);
 
-    updateModelTag(key, model);
+    updateModelTag(model);
     closeModal();
   });
 
   testKeyBtn.addEventListener('click', async () => {
-    const key = geminiApiKeyInput.value.trim();
     testKeyBtn.textContent = "Tekshirilmoqda...";
     testKeyBtn.disabled = true;
 
@@ -1465,12 +1446,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/test-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: key })
+        body: JSON.stringify({})
       });
       const data = await res.json();
       if (res.ok && data.valid) {
         keyStatusAlert.className = 'alert-box success';
-        keyStatusAlert.textContent = "✅ Kalit muvaffaqiyatli tekshirildi va yaroqli!";
+        keyStatusAlert.textContent = "✅ Serverdagi OpenRouter kaliti yaroqli!";
       } else {
         keyStatusAlert.className = 'alert-box error';
         keyStatusAlert.textContent = `❌ ${data.error || "Kalit yaroqsiz."}`;

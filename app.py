@@ -8,7 +8,8 @@ import re
 import traceback
 import uuid
 import time
-from flask import Flask, render_template, request, Response, jsonify, stream_with_context, send_from_directory, session
+from urllib.parse import quote
+from flask import Flask, render_template, request, Response, jsonify, stream_with_context, send_from_directory, session, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
@@ -21,8 +22,10 @@ load_dotenv()
 
 OPENROUTER_MODEL = os.getenv(
     "OPENROUTER_MODEL",
-    "meta-llama/llama-3.3-70b-instruct:free",
+    "openrouter/free",
 )
+OPENROUTER_IMAGE_MODEL = os.getenv("OPENROUTER_IMAGE_MODEL", "google/gemini-3.1-flash-image")
+OPENROUTER_VIDEO_MODEL = os.getenv("OPENROUTER_VIDEO_MODEL", "google/veo-3.1-lite")
 OPENROUTER_SYSTEM_PROMPT = (
     "Sen Mahliyo AI san. O'zbek tilida aniq, do'stona va tushunarli javob ber. "
     "Foydalanuvchi qaysi tilda yozsa, shu tilda javob ber."
@@ -38,6 +41,7 @@ CORS(app)
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 LOGIN_ATTEMPT_LIMIT = 5
 LOGIN_ATTEMPT_WINDOW_SECONDS = 15 * 60
+DEFAULT_DAILY_AI_LIMIT = 10000
 login_attempts = {}
 
 DATA_DIR = os.environ.get("MAHLIYO_DATA_DIR")
@@ -54,17 +58,17 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 SUPPORTED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 DEFAULT_SYSTEM_PROMPT = (
-    "Sen Mahliyo — O'zbekiston uchun maxsus ishlab chiqilgan ilg'or, aqlli, "
-    "xushmuomala va samimiy sun'iy intellekt yordamchisisan. Foydalanuvchi qaysi tabiiy "
-    "tilda yozsa, javobni o'sha tilda va yozuv tizimida ber; o'zbekcha yozsa o'zbekcha, "
-    "kirill yozuvida yozsa kirillda javob ber. Boshqa tilga o'tishni foydalanuvchi so'ramasa, "
-    "tilni almashtirma. Dasturlashda Python, JavaScript, TypeScript, Java, C, C++, C#, Go, "
-    "Rust, PHP, Ruby, Swift, Kotlin, SQL, HTML va CSS kabi tillarda kod yoz, tahlil qil, "
-    "xatolarni tuzat va kerak bo'lsa ishlashini tushuntir; kod blokining til belgisini to'g'ri qo'y. "
-    "Har bir mavzuni: dasturlash, rasmiy xat va arizalar, "
-    "slayd va taqdimotlar, universitet talabalari uchun mustaqil ishlar, "
-    "fan va ta'lim bo'yicha professional darajada tushuntirib bera olasan. "
-    "Foydalanuvchi taqdimot yoki mustaqil ish so'rasa, unga to'liq reja va matn yozib berasan."
+    "Sen Mahliyo AI, o'zbek tilidagi akademik yordamchisan. Talabalar uchun mavzuga mos, "
+    "faktlarga tayangan slayd va mustaqil ish tayyorlaysan. Foydalanuvchi boshqa tilni so'ramasa, "
+    "javobni o'zbek tilida, lotin yozuvida ber. Mavzu aniq bo'lmasa, faqat bitta qisqa savol ber; "
+    "aniq bo'lsa, qo'shimcha savol bermasdan ishni bajar. Hech qachon shablon, bo'sh joy, "
+    "qavs ichidagi to'ldirish ko'rsatmasi, ko'p nuqta yoki mavzuga aloqasiz umumiy matn qoldirma. "
+    "Ism berilmagan bo'lsa titulda 'Bajardi: Talaba' deb yoz; boshqa maydonlar uchun uydirma ism "
+    "yoki guruh yaratma. Aniq fakt, sana, raqam va misollarni faqat ishonchli bo'lsa keltir; "
+    "tadqiqot natijasi yoki manba nomini to'qib chiqarmagin. Manbani tasdiqlay olmasang, uni "
+    "haqiqiy manba sifatida ko'rsatma. Akademik topshiriqlarda tilni ravon, izchil va mavzuga "
+    "xos saqla. Dasturlashda Python, JavaScript, TypeScript, Java, C, C++, C#, Go, Rust, PHP, "
+    "Ruby, Swift, Kotlin, SQL, HTML va CSS tillarida kod yoz, tahlil qil va xatolarni tuzat."
 )
 
 # Initialize database
@@ -89,6 +93,12 @@ def init_db():
             created_at TIMESTAMP NOT NULL
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS daily_ai_usage (
+            usage_date TEXT PRIMARY KEY,
+            request_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
     conversation_columns = {
         row[1] for row in cursor.execute("PRAGMA table_info(conversations)")
     }
@@ -104,6 +114,90 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def configured_daily_ai_limit():
+    try:
+        return max(1, int(os.getenv("DAILY_AI_LIMIT", str(DEFAULT_DAILY_AI_LIMIT))))
+    except ValueError:
+        return DEFAULT_DAILY_AI_LIMIT
+
+
+def reserve_daily_ai_request():
+    usage_date = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    limit = configured_daily_ai_limit()
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT request_count FROM daily_ai_usage WHERE usage_date = ?",
+            (usage_date,),
+        ).fetchone()
+        used = row[0] if row else 0
+        if used >= limit:
+            conn.rollback()
+            return False, usage_date, used, limit
+        conn.execute(
+            "INSERT INTO daily_ai_usage (usage_date, request_count) VALUES (?, 1) "
+            "ON CONFLICT(usage_date) DO UPDATE SET request_count = request_count + 1",
+            (usage_date,),
+        )
+        conn.commit()
+        return True, usage_date, used + 1, limit
+    finally:
+        conn.close()
+
+
+def release_daily_ai_request(usage_date):
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE daily_ai_usage SET request_count = request_count - 1 "
+            "WHERE usage_date = ? AND request_count > 0",
+            (usage_date,),
+        )
+        conn.execute(
+            "DELETE FROM daily_ai_usage WHERE usage_date = ? AND request_count = 0",
+            (usage_date,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@app.before_request
+def enforce_daily_ai_limit():
+    usage_paths = {
+        "/api/chat",
+        "/api/chat/stream",
+        "/api/translate",
+        "/api/generate/slide",
+        "/api/generate/document",
+    }
+    if request.method != "POST" or request.path not in usage_paths:
+        return None
+
+    allowed, usage_date, used, limit = reserve_daily_ai_request()
+    if not allowed:
+        return jsonify({
+            "error": f"Ilovaning kunlik AI so'rovi limiti tugadi ({limit:,}/kun). Limit UTC 00:00 da yangilanadi.",
+            "limit": limit,
+            "used": used,
+        }), 429
+    g.daily_ai_usage_date = usage_date
+    return None
+
+
+@app.after_request
+def release_stream_fallback_usage(response):
+    usage_date = getattr(g, "daily_ai_usage_date", None)
+    if request.path != "/api/chat/stream" or not usage_date or not response.is_json:
+        return response
+    payload = response.get_json(silent=True)
+    if isinstance(payload, dict) and payload.get("fallback_required") is True:
+        release_daily_ai_request(usage_date)
+    return response
 
 
 def current_user():
@@ -143,121 +237,25 @@ def register_login_failure():
     login_attempts[ip_address] = recent_attempts
 
 
-def gemini_api_error(response, operation="Gemini"):
-    """Translate Gemini API failures into actionable messages without exposing credentials."""
-    try:
-        message = response.json().get("error", {}).get("message", "")
-    except (ValueError, AttributeError):
-        message = ""
-
-    details = f" Tafsilot: {message}" if message else ""
-    if response.status_code in (401, 403):
-        return f"{operation} API kaliti noto'g'ri yoki unga ruxsat berilmagan. Sozlamalardan kalitni tekshiring.{details}"
-    if response.status_code == 404:
-        return f"Tanlangan Gemini modeli mavjud emas. Sozlamalardan mavjud Gemini modelini tanlang.{details}"
-    if response.status_code == 429:
-        return f"Gemini API so'rov limiti yoki kvotasi tugagan. Google AI Studio'dagi kvotani tekshiring.{details}"
-    if response.status_code >= 500:
-        return f"Google Gemini xizmati vaqtincha ishlamayapti. Birozdan keyin qayta urinib ko'ring.{details}"
-    return f"{operation} so'rovni rad etdi (HTTP {response.status_code}). API sozlamalari va so'rovni tekshiring.{details}"
-
-
-def call_gemini_api(
-    api_key,
-    messages,
-    model_name="gemini-3.5-flash",
-    system_prompt=None,
-    system_prompt_only=False,
-    max_output_tokens=2500,
-    use_search=False,
-    sources_out=None
-):
-    """Call Google Gemini API using REST endpoint"""
-    if not model_name:
-        model_name = "gemini-3.5-flash"
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-    
-    contents = []
-    system_instruction = "" if system_prompt_only else DEFAULT_SYSTEM_PROMPT
-    if system_prompt:
-        if system_prompt_only:
-            system_instruction = system_prompt
-        else:
-            system_instruction += f"\n\nFoydalanuvchining qo'shimcha ko'rsatmasi:\n{system_prompt}"
-
-    for m in messages:
-        role = "user" if m.get("role") in ["user", "human"] else "model"
-        text = m.get("content", "")
-        parts = [{"text": text}]
-        image = m.get("image")
-        if image:
-            parts.append({
-                "inlineData": {
-                    "mimeType": image["mime_type"],
-                    "data": image["data"]
-                }
-            })
-        contents.append({
-            "role": role,
-            "parts": parts
-        })
-
-    payload = {
-        "contents": contents,
-        "systemInstruction": {
-            "parts": [{"text": system_instruction}]
-        },
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": max_output_tokens,
-        }
-    }
-    if use_search:
-        payload["tools"] = [{"google_search": {}}]
-
-    try:
-        resp = requests.post(
-            url,
-            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-            json=payload,
-            timeout=60
-        )
-    except requests.RequestException as error:
-        return None, f"Gemini xizmatiga ulanib bo'lmadi. Server internet/DNS ulanishini tekshiring. ({type(error).__name__})"
-    
-    if resp.status_code != 200:
-        return None, gemini_api_error(resp)
-        
-    try:
-        data = resp.json()
-        candidate = data["candidates"][0]
-        text = candidate["content"]["parts"][0]["text"]
-        if use_search and sources_out is not None:
-            sources_out.extend(extract_grounding_sources(candidate))
-        return text, None
-    except (ValueError, KeyError, IndexError, TypeError) as error:
-        return None, f"Gemini javobini o'qib bo'lmadi: {error}"
-
-
-def openrouter_client():
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+def openrouter_client(api_key=None):
+    api_key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
     if not api_key:
         return None
-    if not OPENROUTER_MODEL.endswith(":free"):
-        raise ValueError("OPENROUTER_MODEL faqat :free modeli bo'lishi kerak.")
     return OpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
     )
 
 
-def build_openrouter_messages(history, message, system_prompt=None):
-    instruction = OPENROUTER_SYSTEM_PROMPT
+def build_openrouter_messages(history, message, system_prompt=None, image=None, system_prompt_only=False):
+    instruction = "" if system_prompt_only else DEFAULT_SYSTEM_PROMPT
     if isinstance(system_prompt, str) and system_prompt.strip():
-        instruction += f"\n\nFoydalanuvchining qo'shimcha ko'rsatmasi:\n{system_prompt.strip()}"
+        if instruction:
+            instruction += f"\n\nFoydalanuvchining qo'shimcha ko'rsatmasi:\n{system_prompt.strip()}"
+        else:
+            instruction = system_prompt.strip()
 
-    messages = [{"role": "system", "content": instruction}]
+    messages = [{"role": "system", "content": instruction}] if instruction else []
     for item in history[-8:]:
         if not isinstance(item, dict):
             continue
@@ -266,60 +264,200 @@ def build_openrouter_messages(history, message, system_prompt=None):
             continue
         role = "user" if item.get("role") in ("user", "human") else "assistant"
         messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": message})
+    user_content = [{"type": "text", "text": message}]
+    if isinstance(image, dict):
+        user_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{image['mime_type']};base64,{image['data']}",
+            },
+        })
+    messages.append({"role": "user", "content": user_content if image else message})
     return messages
 
 
-def call_openrouter_api(history, message, system_prompt=None):
+def call_openrouter_api(
+    history,
+    message,
+    system_prompt=None,
+    use_search=False,
+    image=None,
+    system_prompt_only=False,
+    max_tokens=2500,
+    api_key=None,
+    model=None,
+    sources_out=None,
+):
     try:
-        client = openrouter_client()
+        client = openrouter_client(api_key)
         if client is None:
             return None, "OPENROUTER_API_KEY sozlanmagan."
-        response = client.chat.completions.create(
-            model=OPENROUTER_MODEL,
-            messages=build_openrouter_messages(history, message, system_prompt),
-            temperature=0.7,
-            max_tokens=2500,
-        )
-        reply = response.choices[0].message.content
+        request = {
+            "model": model or (os.getenv("OPENROUTER_VISION_MODEL", OPENROUTER_MODEL) if image else OPENROUTER_MODEL),
+            "messages": build_openrouter_messages(
+                history,
+                message,
+                system_prompt,
+                image=image,
+                system_prompt_only=system_prompt_only,
+            ),
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+        }
+        if use_search:
+            request["extra_body"] = {"plugins": [{"id": "web"}]}
+        response = client.chat.completions.create(**request)
+        assistant_message = response.choices[0].message
+        reply = assistant_message.content
+        if sources_out is not None:
+            message_data = assistant_message.model_dump()
+            for annotation in message_data.get("annotations") or []:
+                citation = annotation.get("url_citation", {})
+                url = citation.get("url")
+                if isinstance(url, str) and url.startswith(("https://", "http://")):
+                    sources_out.append({"title": citation.get("title") or url, "url": url})
         if isinstance(reply, str) and reply.strip():
             return reply, None
         return None, "OpenRouter bo'sh javob qaytardi."
     except (OpenAIError, ValueError, IndexError, AttributeError) as error:
-        app.logger.warning("OpenRouter chat ishlamadi; Gemini fallback qo'llanadi (%s).", type(error).__name__)
+        app.logger.warning("OpenRouter chat ishlamadi (%s).", type(error).__name__)
         return None, f"OpenRouter chat ishlamadi ({type(error).__name__})."
 
 
-def extract_grounding_sources(candidate):
-    sources = []
-    seen_urls = set()
-    grounding = candidate.get("groundingMetadata", {})
-    if not isinstance(grounding, dict):
-        return sources
-    for chunk in grounding.get("groundingChunks", []):
-        if not isinstance(chunk, dict):
-            continue
-        web = chunk.get("web", {})
-        if not isinstance(web, dict):
-            continue
-        title = web.get("title")
-        url = web.get("uri")
-        if (
-            not isinstance(url, str)
-            or len(url) > 2048
-            or not url.startswith(("https://", "http://"))
-            or url in seen_urls
-        ):
-            continue
-        seen_urls.add(url)
-        sources.append({
-            "title": title[:300] if isinstance(title, str) and title else url,
-            "url": url,
-        })
-    return sources
+def openrouter_api_error(response, operation):
+    try:
+        data = response.json()
+        details = data.get("error", {}).get("message", "") if isinstance(data, dict) else ""
+    except ValueError:
+        details = ""
+    if response.status_code == 401:
+        return "OPENROUTER_API_KEY noto'g'ri yoki bekor qilingan."
+    if response.status_code == 402:
+        return "OpenRouter krediti yoki ushbu model uchun limit yetarli emas."
+    if response.status_code == 429:
+        return "OpenRouter so'rov limiti vaqtincha tugadi. Birozdan keyin qayta urinib ko'ring."
+    suffix = f" {str(details)[:300]}" if details else ""
+    return f"{operation} bajarilmadi (HTTP {response.status_code}).{suffix}"
 
 
-def gemini_stream_event(event, payload):
+def generate_openrouter_image(prompt, api_key=None):
+    api_key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
+    if not api_key:
+        return None, "OPENROUTER_API_KEY sozlanmagan."
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/images",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": OPENROUTER_IMAGE_MODEL, "prompt": prompt, "output_format": "png"},
+            timeout=180,
+        )
+    except requests.RequestException as error:
+        return None, f"OpenRouter rasm xizmatiga ulanib bo'lmadi ({type(error).__name__})."
+    if response.status_code != 200:
+        return None, openrouter_api_error(response, "OpenRouter rasm yaratish")
+    try:
+        image = response.json()["data"][0]
+        image_data = base64.b64decode(image["b64_json"], validate=True)
+        mime_type = image.get("media_type", "image/png")
+    except (ValueError, KeyError, IndexError, TypeError, binascii.Error):
+        return None, "OpenRouter javobidan rasmni o'qib bo'lmadi."
+    extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type)
+    if not extension:
+        return None, f"OpenRouter qo'llab-quvvatlanmaydigan rasm formatini qaytardi: {mime_type}"
+    if not image_data or len(image_data) > 20 * 1024 * 1024:
+        return None, "OpenRouter yaratgan rasm bo'sh yoki 20 MB limitidan katta."
+    filename = f"generated_{uuid.uuid4().hex}.{extension}"
+    with open(os.path.join(GENERATED_DIR, filename), "wb") as image_file:
+        image_file.write(image_data)
+    return {
+        "type": "image",
+        "file_url": f"/download/{filename}",
+        "filename": filename,
+    }, None
+
+
+def generate_openrouter_video(prompt, api_key=None):
+    api_key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
+    if not api_key:
+        return None, "OPENROUTER_API_KEY sozlanmagan."
+    base_url = "https://openrouter.ai/api/v1"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(
+            f"{base_url}/videos",
+            headers=headers,
+            json={
+                "model": OPENROUTER_VIDEO_MODEL,
+                "prompt": prompt,
+                "duration": 8,
+                "resolution": "720p",
+                "aspect_ratio": "16:9",
+                "generate_audio": False,
+            },
+            timeout=60,
+        )
+    except requests.RequestException as error:
+        return None, f"OpenRouter video xizmatiga ulanib bo'lmadi ({type(error).__name__})."
+    if response.status_code not in (200, 202):
+        return None, openrouter_api_error(response, "OpenRouter video yaratish")
+    try:
+        job = response.json()
+        job_id = job["id"]
+        status = job.get("status", "pending")
+    except (ValueError, KeyError, TypeError):
+        return None, "OpenRouter video job javobini o'qib bo'lmadi."
+    if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._:-]+", job_id):
+        return None, "OpenRouter video job identifikatori noto'g'ri."
+
+    deadline = time.monotonic() + 480
+    while status not in ("completed", "failed", "cancelled", "expired"):
+        if time.monotonic() >= deadline:
+            return None, "OpenRouter video yaratish 8 daqiqada yakunlanmadi."
+        time.sleep(10)
+        try:
+            status_response = requests.get(
+                f"{base_url}/videos/{quote(job_id, safe='')}",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            return None, f"OpenRouter video holatini tekshirib bo'lmadi ({type(error).__name__})."
+        if status_response.status_code != 200:
+            return None, openrouter_api_error(status_response, "OpenRouter video holatini tekshirish")
+        try:
+            job = status_response.json()
+            status = job.get("status")
+        except ValueError:
+            return None, "OpenRouter video holati javobini o'qib bo'lmadi."
+    if status != "completed":
+        return None, f"OpenRouter video yaratishni yakunlay olmadi ({status}). {job.get('error', '')}"
+
+    try:
+        video_response = requests.get(
+            f"{base_url}/videos/{quote(job_id, safe='')}/content?index=0",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=120,
+        )
+    except requests.RequestException as error:
+        return None, f"OpenRouter videosini yuklab olib bo'lmadi ({type(error).__name__})."
+    if video_response.status_code != 200:
+        return None, openrouter_api_error(video_response, "OpenRouter videosini yuklab olish")
+    video_data = video_response.content
+    if not video_data or len(video_data) > 100 * 1024 * 1024:
+        return None, "OpenRouter qaytargan video bo'sh yoki 100 MB hajm limitidan katta."
+    filename = f"generated_{uuid.uuid4().hex}.mp4"
+    with open(os.path.join(GENERATED_DIR, filename), "wb") as video_file:
+        video_file.write(video_data)
+    return {
+        "type": "video",
+        "model": OPENROUTER_VIDEO_MODEL,
+        "file_url": f"/download/{filename}",
+        "media_url": f"/media/{filename}",
+        "filename": filename,
+    }, None
+
+
+def openrouter_stream_event(event, payload):
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
@@ -344,73 +482,7 @@ def split_translation_text(text, max_length=5000):
 
 
 def generate_image(api_key, prompt):
-    """Generate an image with Gemini and save it under the generated-files directory."""
-    try:
-        response = requests.post(
-            "https://generativelanguage.googleapis.com/v1beta/interactions",
-            headers={
-                "Content-Type": "application/json",
-                "x-goog-api-key": api_key
-            },
-            json={
-                "model": "gemini-3.1-flash-lite-image",
-                "input": [{"type": "text", "text": prompt}],
-                "store": False
-            },
-            timeout=120
-        )
-    except requests.RequestException as error:
-        return None, f"Gemini bilan ulanishda xatolik: {error}"
-
-    if response.status_code != 200:
-        return None, gemini_api_error(response, "Gemini rasm yaratish")
-
-    try:
-        result = response.json()
-        output = result.get("output", [])
-        image = result.get("output_image")
-        if not image:
-            for item in output:
-                if item.get("type") == "image":
-                    image = item
-                    break
-                image = next(
-                    (part for part in item.get("content", []) if part.get("type") == "image"),
-                    None
-                )
-                if image:
-                    break
-        image_data = base64.b64decode(image["data"], validate=True)
-        mime_type = image.get("mime_type", "image/png")
-    except (AttributeError, KeyError, TypeError, ValueError, binascii.Error) as error:
-        return None, f"Gemini javobidan rasmni o'qib bo'lmadi: {error}"
-
-    extensions = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
-    extension = extensions.get(mime_type)
-    if not extension:
-        return None, f"Gemini qo'llab-quvvatlanmaydigan rasm formatini qaytardi: {mime_type}"
-    if not image_data or len(image_data) > 20 * 1024 * 1024:
-        return None, "Gemini yaratgan rasm bo'sh yoki 20 MB limitidan katta."
-
-    filename = f"generated_{uuid.uuid4().hex}.{extension}"
-    with open(os.path.join(GENERATED_DIR, filename), "wb") as image_file:
-        image_file.write(image_data)
-
-    artifact = {
-        "type": "image",
-        "file_url": f"/download/{filename}",
-        "filename": filename
-    }
-    output_text = result.get("output_text")
-    if not isinstance(output_text, str):
-        output_text = " ".join(
-            item.get("text", "")
-            for item in output
-            if item.get("type") == "text" and isinstance(item.get("text"), str)
-        )
-    if output_text:
-        artifact["reply"] = output_text
-    return artifact, None
+    return generate_openrouter_image(prompt, api_key)
 
 
 def is_video_generation_request(message):
@@ -422,141 +494,6 @@ def is_video_generation_request(message):
         "создай видео", "сгенерируй видео", "crée une vidéo", "erstelle ein video",
     )
     return any(phrase in query for phrase in phrases)
-
-
-def list_video_models(api_key):
-    headers = {"x-goog-api-key": api_key}
-    models = []
-    page_token = None
-    try:
-        for _ in range(10):
-            params = {"pageSize": 1000}
-            if page_token:
-                params["pageToken"] = page_token
-            response = requests.get(
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                headers=headers,
-                params=params,
-                timeout=30,
-            )
-            if response.status_code != 200:
-                return None, gemini_api_error(response, "Gemini video modellari")
-            data = response.json()
-            for model in data.get("models", []):
-                name = model.get("name", "")
-                methods = model.get("supportedGenerationMethods", [])
-                if "veo" in name.lower() and "predictLongRunning" in methods:
-                    models.append(name.removeprefix("models/"))
-            page_token = data.get("nextPageToken")
-            if not page_token:
-                break
-    except (requests.RequestException, ValueError, AttributeError) as error:
-        return None, f"Gemini video modellarini tekshirib bo'lmadi: {type(error).__name__}"
-
-    priority = (
-        "veo-3.1-generate-preview",
-        "veo-3.1-fast-generate-preview",
-        "veo-3.0-generate-001",
-        "veo-3.0-generate-preview",
-        "veo-2.0-generate-001",
-    )
-    models.sort(key=lambda name: (priority.index(name) if name in priority else len(priority), name))
-    if not models:
-        return None, (
-            "Bu Gemini API kalitida predictLongRunning qo'llaydigan Veo modeli topilmadi. "
-            "Google AI Studio'da Veo API ruxsati, hisob va mintaqa mavjudligini tekshiring."
-        )
-    return models, None
-
-
-def generate_video(api_key, prompt):
-    """Generate an MP4 with Veo and save it under the generated-files directory."""
-    model_names, error = list_video_models(api_key)
-    if error:
-        return None, error
-
-    headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-    response = None
-    model_name = None
-    for candidate in model_names:
-        try:
-            response = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{candidate}:predictLongRunning",
-                headers=headers,
-                json={
-                    "instances": [{"prompt": prompt}],
-                    "parameters": {"aspectRatio": "16:9", "durationSeconds": 8},
-                },
-                timeout=60,
-            )
-        except requests.RequestException as error:
-            return None, f"Gemini video xizmatiga ulanib bo'lmadi: {type(error).__name__}"
-        if response.status_code == 200:
-            model_name = candidate
-            break
-        if response.status_code != 404:
-            return None, gemini_api_error(response, "Gemini video yaratish")
-
-    if response is None or response.status_code != 200:
-        return None, "Ro'yxatdagi Veo modellaridan hech biri video yaratish so'rovini qabul qilmadi."
-
-    try:
-        operation = response.json()
-        operation_name = operation.get("name")
-    except (ValueError, AttributeError):
-        return None, "Veo video yaratish so'rovining javobini o'qib bo'lmadi."
-    if not isinstance(operation_name, str) or not re.fullmatch(r"operations/[A-Za-z0-9._:-]+", operation_name):
-        return None, "Veo video yaratish amalining identifikatori noto'g'ri."
-
-    deadline = time.monotonic() + 480
-    while not operation.get("done") and time.monotonic() < deadline:
-        time.sleep(5)
-        try:
-            status_response = requests.get(
-                f"https://generativelanguage.googleapis.com/v1beta/{operation_name}",
-                headers=headers,
-                timeout=30,
-            )
-        except requests.RequestException as error:
-            return None, f"Veo video holatini tekshirishda xatolik: {type(error).__name__}"
-        if status_response.status_code != 200:
-            return None, gemini_api_error(status_response, "Veo video holatini tekshirish")
-        try:
-            operation = status_response.json()
-        except ValueError:
-            return None, "Veo video holati javobini o'qib bo'lmadi."
-
-    if not operation.get("done"):
-        return None, "Video yaratish 8 daqiqada yakunlanmadi. Keyinroq qayta urinib ko'ring."
-    if operation.get("error"):
-        return None, f"Veo video yaratishni yakunlay olmadi: {operation['error'].get('message', 'Noma’lum xatolik')}"
-
-    try:
-        samples = operation["response"]["generateVideoResponse"]["generatedSamples"]
-        video_uri = samples[0]["video"]["uri"]
-    except (KeyError, IndexError, TypeError):
-        return None, "Veo tayyor videoni javobda qaytarmadi."
-
-    try:
-        video_response = requests.get(video_uri, headers={"x-goog-api-key": api_key}, timeout=120)
-    except requests.RequestException as error:
-        return None, f"Yaratilgan videoni yuklab olib bo'lmadi: {type(error).__name__}"
-    if video_response.status_code != 200:
-        return None, gemini_api_error(video_response, "Yaratilgan videoni yuklab olish")
-    video_data = video_response.content
-    if not video_data or len(video_data) > 100 * 1024 * 1024:
-        return None, "Veo qaytargan video bo'sh yoki 100 MB hajm limitidan katta."
-
-    filename = f"generated_{uuid.uuid4().hex}.mp4"
-    with open(os.path.join(GENERATED_DIR, filename), "wb") as video_file:
-        video_file.write(video_data)
-    return {
-        "type": "video",
-        "model": model_name,
-        "file_url": f"/download/{filename}",
-        "media_url": f"/media/{filename}",
-        "filename": filename,
-    }, None
 
 
 def is_image_generation_request(message):
@@ -602,15 +539,16 @@ def generate_spreadsheet_artifact(query, api_key):
         "Each row must be an array with the same number of values as columns. Use JSON numbers "
         "for numeric data, not formatted strings. Do not include markdown fences or explanations."
     )
-    result, error = call_gemini_api(
-        api_key,
-        [{"role": "user", "content": f"Excel jadval mavzusi: {topic}"}],
+    result, error = call_openrouter_api(
+        [],
+        f"Excel jadval mavzusi: {topic}",
         system_prompt=system_prompt,
         system_prompt_only=True,
-        max_output_tokens=8000,
+        max_tokens=8000,
+        api_key=api_key,
     )
     if error or result is None:
-        raise ArtifactGenerationError(error or "Gemini jadval ma'lumotlarini yaratolmadi.")
+        raise ArtifactGenerationError(error or "OpenRouter jadval ma'lumotlarini yaratolmadi.")
 
     json_text = result.strip()
     if json_text.startswith("```"):
@@ -622,15 +560,15 @@ def generate_spreadsheet_artifact(query, api_key):
             raise ValueError("JSON obyekti topilmadi")
         spreadsheet_data, _ = json_decoder.raw_decode(json_text[start:])
     except (json.JSONDecodeError, ValueError) as error:
-        raise ArtifactGenerationError(f"Gemini jadval JSON formatini qaytarmadi: {error}") from error
+        raise ArtifactGenerationError(f"OpenRouter jadval JSON formatini qaytarmadi: {error}") from error
 
     sheets = spreadsheet_data.get("sheets") if isinstance(spreadsheet_data, dict) else None
     if not isinstance(sheets, list) or not sheets or len(sheets) > 5:
-        raise ArtifactGenerationError("Gemini jadval uchun yaroqli varaqlar ro'yxatini qaytarmadi.")
+        raise ArtifactGenerationError("OpenRouter jadval uchun yaroqli varaqlar ro'yxatini qaytarmadi.")
     preview_sheets = []
     for sheet in sheets:
         if not isinstance(sheet, dict):
-            raise ArtifactGenerationError("Gemini qaytargan jadval varag'i noto'g'ri.")
+            raise ArtifactGenerationError("OpenRouter qaytargan jadval varag'i noto'g'ri.")
         name, columns, rows = sheet.get("name"), sheet.get("columns"), sheet.get("rows")
         if (
             not isinstance(name, str)
@@ -640,14 +578,14 @@ def generate_spreadsheet_artifact(query, api_key):
             or not isinstance(rows, list)
             or len(rows) > 500
         ):
-            raise ArtifactGenerationError("Gemini qaytargan jadval ustunlari yoki qatorlari noto'g'ri.")
+            raise ArtifactGenerationError("OpenRouter qaytargan jadval ustunlari yoki qatorlari noto'g'ri.")
         for row in rows:
             if (
                 not isinstance(row, list)
                 or len(row) != len(columns)
                 or any(not isinstance(value, (str, int, float, bool, type(None))) for value in row)
             ):
-                raise ArtifactGenerationError("Gemini qaytargan jadval qatori ustunlarga mos emas.")
+                raise ArtifactGenerationError("OpenRouter qaytargan jadval qatori ustunlarga mos emas.")
         preview_sheets.append({
             "name": name,
             "columns": columns,
@@ -668,7 +606,234 @@ def generate_spreadsheet_artifact(query, api_key):
     }
 
 
-def check_and_generate_artifacts(query, api_key=None):
+ACADEMIC_OUTPUT_PROMPT = (
+    "Barcha akademik materialni faqat o'zbek tilida, lotin yozuvida yoz. "
+    "Hech qanday shablon, qavsli to'ldirish joyi, ko'p nuqta, lorem ipsum yoki umumiy placeholder ishlatma. "
+    "Mavzuga oid aniq fakt, sana, raqam va misollarni faqat ishonchli bo'lsa keltir; "
+    "tadqiqot natijasi, statistika yoki manbani to'qib chiqarmagin. Tekshirilmagan ma'lumot o'rniga "
+    "sifat jihatdan tahlil qil. Faqat so'ralgan JSON obyektini qaytar, markdown fence yoki izoh qo'shma."
+)
+ACADEMIC_PLACEHOLDERS = (
+    "...", "[", "]", "lorem ipsum", "bu yerga yozing", "mavzu haqida ma'lumot",
+    "to'ldiring", "fill in", "insert here", "placeholder",
+)
+
+
+def contains_academic_placeholder(value):
+    if isinstance(value, str):
+        lowered = value.lower()
+        return any(marker in lowered for marker in ACADEMIC_PLACEHOLDERS)
+    if isinstance(value, list):
+        return any(contains_academic_placeholder(item) for item in value)
+    if isinstance(value, dict):
+        return any(contains_academic_placeholder(item) for item in value.values())
+    return False
+
+
+def parse_model_json(text, task_name):
+    json_text = text.strip()
+    if json_text.startswith("```"):
+        json_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", json_text, flags=re.IGNORECASE)
+    start = json_text.find("{")
+    if start < 0:
+        raise ArtifactGenerationError(f"OpenRouter {task_name} uchun JSON qaytarmadi.")
+    try:
+        result, _ = json.JSONDecoder().raw_decode(json_text[start:])
+    except json.JSONDecodeError as error:
+        raise ArtifactGenerationError(f"OpenRouter {task_name} JSON formati noto'g'ri: {error}") from error
+    if not isinstance(result, dict):
+        raise ArtifactGenerationError(f"OpenRouter {task_name} JSON obyekti noto'g'ri.")
+    if contains_academic_placeholder(result):
+        raise ArtifactGenerationError(f"OpenRouter {task_name} javobida to'ldirilmagan shablon bor; qayta urinib ko'ring.")
+    return result
+
+
+def academic_title_metadata(metadata=None):
+    metadata = metadata if isinstance(metadata, dict) else {}
+    message = metadata.get("message", "")
+    message = message if isinstance(message, str) else ""
+    labels = {
+        "subject": ("fan", "fan nomi", "subject"),
+        "student": ("bajardi", "talaba", "ism", "fio"),
+        "teacher": ("tekshirdi", "o'qituvchi", "qabul qildi", "rahbar"),
+        "university": ("universitet", "oliygoh", "otm"),
+        "faculty": ("fakultet",),
+        "group": ("guruh",),
+        "city": ("shahar",),
+    }
+
+    def value(key, default):
+        item = metadata.get(key)
+        if isinstance(item, str) and item.strip():
+            return item.strip()[:160]
+        for label in labels.get(key, ()):
+            match = re.search(
+                rf"(?:^|[,;\n])\s*{re.escape(label)}\s*[:=]\s*([^,;\n]+)",
+                message,
+                flags=re.IGNORECASE,
+            )
+            if match and match.group(1).strip():
+                return match.group(1).strip()[:160]
+        return default
+
+    supplied_year = metadata.get("year")
+    if not isinstance(supplied_year, int):
+        match = re.search(r"(?:^|[,;\n])\s*yil\s*[:=]\s*(20\d{2})", message, flags=re.IGNORECASE)
+        supplied_year = int(match.group(1)) if match else datetime.datetime.now().year
+
+    return {
+        "subject": value("subject", "Mustaqil ta'lim"),
+        "student": value("student", "Talaba"),
+        "teacher": value("teacher", "O'qituvchi"),
+        "university": value("university", "Universitet ko'rsatilmagan"),
+        "faculty": value("faculty", "Fakultet ko'rsatilmagan"),
+        "group": value("group", "Guruh ko'rsatilmagan"),
+        "city": value("city", "Shahar ko'rsatilmagan"),
+        "year": supplied_year,
+    }
+
+
+def require_sentence_list(value, minimum, maximum, field_name):
+    if not isinstance(value, list) or not minimum <= len(value) <= maximum:
+        raise ArtifactGenerationError(f"{field_name} uchun {minimum}–{maximum} ta band kerak.")
+    for sentence in value:
+        if not isinstance(sentence, str) or len(sentence.split()) < 5 or sentence.rstrip()[-1:] not in ".!?":
+            raise ArtifactGenerationError(f"{field_name} bandlari to'liq gap bo'lishi kerak.")
+
+
+def generate_academic_presentation(topic, api_key, metadata=None):
+    if not api_key:
+        raise ArtifactGenerationError("Taqdimot yaratish uchun OPENROUTER_API_KEY sozlanmagan.")
+    prompt = (
+        f"Mavzu: {topic}\n"
+        "Quyidagi JSON shaklida akademik taqdimot mazmunini yarat: "
+        "{\"plan\":[4-6 reja bandi],\"slides\":[7 ta asosiy slayd uchun "
+        "{\"title\":\"sarlavha\",\"items\":[4-6 to'liq gap]}],"
+        "\"conclusion\":[4-6 to'liq gap],\"bibliography\":[3-6 ta haqiqiy manba nomi va URL]}. "
+        "Slaydlar 3–9 asosiy mavzularni yoritadi. Har bir asosiy band kamida bitta to'liq gap bo'lsin. "
+        "Rejani mavzuga mos tuz. Statistikani yoki manba bibliografiyasini uydirma."
+    )
+    result, error = call_openrouter_api(
+        [], prompt, system_prompt=ACADEMIC_OUTPUT_PROMPT, system_prompt_only=True,
+        max_tokens=6500, api_key=api_key,
+    )
+    if error or result is None:
+        raise ArtifactGenerationError(error or "OpenRouter taqdimot mazmunini yaratolmadi.")
+    content = parse_model_json(result, "taqdimot")
+    plan = content.get("plan")
+    core_slides = content.get("slides")
+    conclusion = content.get("conclusion")
+    bibliography = content.get("bibliography")
+    if not isinstance(plan, list) or not 4 <= len(plan) <= 6 or not all(isinstance(item, str) and item.strip() for item in plan):
+        raise ArtifactGenerationError("Taqdimot rejasi 4–6 mazmunli banddan iborat bo'lishi kerak.")
+    if not isinstance(core_slides, list) or len(core_slides) < 7:
+        raise ArtifactGenerationError("Taqdimotda kamida 7 ta asosiy slayd bo'lishi kerak.")
+    for index, slide in enumerate(core_slides[:7], start=3):
+        if not isinstance(slide, dict) or not isinstance(slide.get("title"), str) or not slide["title"].strip():
+            raise ArtifactGenerationError(f"{index}-slayd sarlavhasi noto'g'ri.")
+        require_sentence_list(slide.get("items"), 4, 6, f"{index}-slayd")
+    require_sentence_list(conclusion, 4, 6, "Xulosa")
+    if not isinstance(bibliography, list) or len(bibliography) < 3 or not all(isinstance(item, str) and item.strip() for item in bibliography):
+        raise ArtifactGenerationError("Foydalanilgan adabiyotlarda kamida 3 ta manba bo'lishi kerak.")
+
+    title = academic_title_metadata(metadata)
+    slides = [{
+        "type": "title",
+        "title": topic,
+        "subtitle": "Akademik taqdimot",
+        "author": title["student"],
+        "reviewer": title["teacher"],
+        "subject": title["subject"],
+        "university": title["university"],
+        "group": title["group"],
+        "city": title["city"],
+        "year": title["year"],
+    }, {
+        "type": "content",
+        "title": "Reja",
+        "items": [f"{index}. {item}" for index, item in enumerate(plan, start=1)],
+    }]
+    slides.extend({"type": "content", "title": slide["title"], "items": slide["items"]} for slide in core_slides[:7])
+    slides.append({"type": "conclusion", "title": "Xulosa", "items": conclusion})
+    slides.append({"type": "content", "title": "Foydalanilgan adabiyotlar", "items": bibliography[:6]})
+    result = generator.generate_presentation(topic, custom_slides=slides)
+    return {
+        "type": "presentation",
+        "file_url": result["download_url"],
+        "filename": result["filename"],
+        "topic": topic,
+        "slides": slides,
+        "slide_count": len(slides),
+    }
+
+
+def generate_academic_document(topic, api_key, metadata=None):
+    if not api_key:
+        raise ArtifactGenerationError("Mustaqil ish yaratish uchun OPENROUTER_API_KEY sozlanmagan.")
+    prompt = (
+        f"Mavzu: {topic}\n"
+        "3000–4000 so'zli, mazmunan to'liq mustaqil ish uchun faqat quyidagi JSONni yarat: "
+        "{\"introduction\":[3 ta 2-3 gapli abzats],\"chapters\":["
+        "{\"title\":\"I BOB...\",\"sections\":[{\"title\":\"1.1...\",\"paragraphs\":[2-3 ta to'liq abzats]},"
+        "{\"title\":\"1.2...\",\"paragraphs\":[2-3 ta to'liq abzats]}]},"
+        "yana II va III boblar shu shaklda],\"conclusion\":[2-3 ta abzats],"
+        "\"bibliography\":[kamida 5 ta mavzuga oid haqiqiy manba, muallif/tashkilot, yil va URL]}. "
+        "Har bobda kamida 2 bo'lim bo'lsin. Asosiy mazmun jami 3000–4000 so'z bo'lsin. "
+        "Fakt yoki statistikani uydirma; aniq raqamni manbaga bog'la. Noma'lum manba nomini to'qima."
+    )
+    result, error = call_openrouter_api(
+        [], prompt, system_prompt=ACADEMIC_OUTPUT_PROMPT, system_prompt_only=True,
+        max_tokens=12000, api_key=api_key,
+    )
+    if error or result is None:
+        raise ArtifactGenerationError(error or "OpenRouter mustaqil ish mazmunini yaratolmadi.")
+    content = parse_model_json(result, "mustaqil ish")
+    intro = content.get("introduction")
+    chapters = content.get("chapters")
+    conclusion = content.get("conclusion")
+    bibliography = content.get("bibliography")
+    if not isinstance(intro, list) or len(intro) < 2 or not all(isinstance(item, str) and item.strip() for item in intro):
+        raise ArtifactGenerationError("Kirish kamida 2 ta to'liq abzatsdan iborat bo'lishi kerak.")
+    if not isinstance(chapters, list) or len(chapters) < 3:
+        raise ArtifactGenerationError("Mustaqil ishda kamida 3 ta bob bo'lishi kerak.")
+    for chapter in chapters:
+        if not isinstance(chapter, dict) or not isinstance(chapter.get("title"), str) or not chapter["title"].strip():
+            raise ArtifactGenerationError("Bob sarlavhasi noto'g'ri.")
+        subsections = chapter.get("sections")
+        if not isinstance(subsections, list) or len(subsections) < 2:
+            raise ArtifactGenerationError("Har bir bobda kamida 2 ta bo'lim bo'lishi kerak.")
+        for subsection in subsections:
+            paragraphs = subsection.get("paragraphs") if isinstance(subsection, dict) else None
+            if not isinstance(paragraphs, list) or len(paragraphs) < 2 or not all(isinstance(item, str) and item.strip() for item in paragraphs):
+                raise ArtifactGenerationError("Har bir bo'limda kamida 2 ta to'liq abzats bo'lishi kerak.")
+    if not isinstance(conclusion, list) or len(conclusion) < 2 or not all(isinstance(item, str) and item.strip() for item in conclusion):
+        raise ArtifactGenerationError("Xulosa kamida 2 ta to'liq abzatsdan iborat bo'lishi kerak.")
+    if not isinstance(bibliography, list) or len(bibliography) < 5 or not all(isinstance(item, str) and item.strip() for item in bibliography):
+        raise ArtifactGenerationError("Foydalanilgan adabiyotlarda kamida 5 ta manba bo'lishi kerak.")
+    metadata = academic_title_metadata(metadata)
+    result = generator.generate_mustaqil_ish_doc_content(
+        topic,
+        content,
+        subject=metadata["subject"],
+        student=metadata["student"],
+        teacher=metadata["teacher"],
+        university=metadata["university"],
+        faculty=metadata["faculty"],
+        group=metadata["group"],
+        city=metadata["city"],
+        year=metadata["year"],
+    )
+    return {
+        "type": "document",
+        "file_url": result["download_url"],
+        "filename": result["filename"],
+        "topic": topic,
+        "html_preview": result["html_preview"],
+        "word_count": result["word_count"],
+    }
+
+
+def check_and_generate_artifacts(query, api_key=None, metadata=None):
     """
     Checks if user is asking to create a presentation (slayd)
     or independent research paper (mustaqil ish / word doc),
@@ -694,28 +859,14 @@ def check_and_generate_artifacts(query, api_key=None):
 
     if is_spreadsheet:
         if not api_key or not api_key.strip():
-            return None
+            raise ArtifactGenerationError("Excel jadval yaratish uchun OPENROUTER_API_KEY sozlanmagan.")
         return generate_spreadsheet_artifact(query, api_key.strip())
 
     if is_presentation:
-        pres_result = generator.generate_presentation(topic)
-        return {
-            "type": "presentation",
-            "file_url": pres_result["download_url"],
-            "filename": pres_result["filename"],
-            "topic": topic,
-            "slides": pres_result["slides"]
-        }
+        return generate_academic_presentation(topic, api_key, metadata)
 
     if is_word_doc:
-        doc_result = generator.generate_mustaqil_ish_doc(topic)
-        return {
-            "type": "document",
-            "file_url": doc_result["download_url"],
-            "filename": doc_result["filename"],
-            "topic": topic,
-            "html_preview": doc_result["html_preview"]
-        }
+        return generate_academic_document(topic, api_key, metadata)
 
     return None
 
@@ -940,8 +1091,9 @@ def chat():
     data = request.get_json() or {}
     message = data.get("message", "").strip()
     history = data.get("history", [])
-    api_key = os.environ.get("GEMINI_API_KEY") or data.get("api_key")
-    model_name = "gemini-3.5-flash"
+    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    requested_model = data.get("model_name")
+    model_name = requested_model.strip() if isinstance(requested_model, str) and requested_model.strip() else OPENROUTER_MODEL
     system_prompt = data.get("system_prompt")
     image = data.get("image")
 
@@ -976,40 +1128,28 @@ def chat():
             message = f"{message} mavzusida mustaqil ish yozib ber"
 
     if is_video_generation_request(message):
-        if not api_key or not api_key.strip():
-            return jsonify({
-                "error": "Video yaratish uchun Gemini API kaliti kerak. Sozlamalardan Google AI Studio kalitini kiriting."
-            }), 401
-        artifact, error = generate_video(api_key.strip(), message)
+        if not api_key:
+            return jsonify({"error": "OPENROUTER_API_KEY sozlanmagan."}), 401
+        artifact, error = generate_openrouter_video(message, api_key)
         if error:
             return jsonify({"error": error}), 502
         return jsonify({
             "reply": "Video tayyor.",
-            "provider": "gemini",
-            "model": artifact["model"],
+            "provider": "openrouter",
+            "model": OPENROUTER_VIDEO_MODEL,
             "artifact": artifact,
         })
 
     if is_image_generation_request(message):
-        if not api_key or not api_key.strip():
-            return jsonify({
-                "error": "Rasm yaratish va AI bilan suhbat uchun Gemini API kaliti kerak. ⚙️ Sozlamalarni ochib, Google AI Studio'dan olingan kalitni kiriting va saqlang."
-            }), 401
-        artifact, error = generate_image(api_key.strip(), message)
+        if not api_key:
+            return jsonify({"error": "OPENROUTER_API_KEY sozlanmagan."}), 401
+        artifact, error = generate_openrouter_image(message, api_key)
         if error:
             return jsonify({"error": error}), 502
-        reply = artifact.pop("reply", None)
-        if not reply:
-            if any("\u0400" <= char <= "\u04ff" for char in message):
-                reply = "Изображение готово."
-            elif any(word in message.lower() for word in ("generate", "create", "draw", "make")):
-                reply = "Your image is ready."
-            else:
-                reply = "Rasm tayyor."
         return jsonify({
-            "reply": reply,
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite-image",
+            "reply": "Rasm tayyor.",
+            "provider": "openrouter",
+            "model": OPENROUTER_IMAGE_MODEL,
             "artifact": artifact
         })
 
@@ -1041,62 +1181,46 @@ def chat():
 
     # Check if user needs presentation or word doc generated
     try:
-        artifact = check_and_generate_artifacts(message, api_key)
+        artifact = check_and_generate_artifacts(message, api_key or None, metadata=data)
     except ArtifactGenerationError as error:
         return jsonify({"error": str(error)}), 502
 
-    use_search = artifact is None and not image and data.get("use_search") is True
-    if artifact is None and not image and not use_search:
-        reply, _ = call_openrouter_api(history, message, system_prompt)
+    use_search = artifact is None and data.get("use_search") is True
+    if artifact is None:
+        if not api_key:
+            return jsonify({"error": "OPENROUTER_API_KEY sozlanmagan."}), 401
+        sources = []
+        reply, error = call_openrouter_api(
+            history,
+            message,
+            system_prompt,
+            use_search=use_search,
+            image=image,
+            api_key=api_key,
+            model=os.getenv("OPENROUTER_VISION_MODEL", OPENROUTER_MODEL) if image else model_name,
+            sources_out=sources,
+        )
         if reply:
             return jsonify({
                 "reply": reply,
                 "provider": "openrouter",
-                "model": OPENROUTER_MODEL,
+                "model": model_name,
                 "artifact": None,
-                "sources": [],
+                "sources": sources,
             })
+        return jsonify({"error": error or "OpenRouter javob qaytarmadi."}), 502
 
-    if not api_key or not api_key.strip():
-        if image:
-            return jsonify({
-                "error": "Rasmni tahlil qilish va AI bilan suhbat uchun Gemini API kaliti kerak. ⚙️ Sozlamalarni ochib, Google AI Studio'dan olingan kalitni kiriting va saqlang."
-            }), 401
-        if artifact is None:
-            return jsonify({
-                "error": "AI bilan suhbat uchun Gemini API kaliti sozlanmagan. ⚙️ Sozlamalarni oching, Google AI Studio'dan olingan kalitni kiriting va saqlang."
-            }), 401
-        return jsonify({
-            "reply": generate_smart_fallback(message, history),
-            "provider": "mahliyo-local",
-            "model": "mahliyo-core-v1",
-            "artifact": artifact
-        })
-
-    formatted_messages = []
-    for h in history[-8:]:
-        formatted_messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-    formatted_messages.append({"role": "user", "content": message, "image": image})
-
-    sources = []
-    reply, err = call_gemini_api(
-        api_key.strip(),
-        formatted_messages,
-        model_name,
-        system_prompt,
-        use_search=use_search,
-        sources_out=sources,
-    )
-    if reply:
-        return jsonify({
-            "reply": reply,
-            "provider": "gemini",
-            "model": model_name,
-            "artifact": artifact,
-            "sources": sources,
-        })
-
-    return jsonify({"error": err or "Gemini'dan javob olib bo'lmadi."}), 502
+    artifact_replies = {
+        "presentation": "Taqdimot mavzuga mos mazmun bilan tayyorlandi.",
+        "document": "Mustaqil ish to'liq mazmun bilan tayyorlandi.",
+        "spreadsheet": "Excel jadval tayyorlandi.",
+    }
+    return jsonify({
+        "reply": artifact_replies.get(artifact.get("type"), "Fayl tayyorlandi."),
+        "provider": "openrouter",
+        "model": OPENROUTER_MODEL,
+        "artifact": artifact,
+    })
 
 
 @app.route("/api/chat/stream", methods=["POST"])
@@ -1137,19 +1261,23 @@ def chat_stream():
     if use_search:
         return jsonify({"fallback_required": True})
 
+    model_name = data.get("model_name")
+    if not isinstance(model_name, str) or not model_name.strip():
+        model_name = OPENROUTER_MODEL
+
     try:
         client = openrouter_client()
         if client is None:
             return jsonify({"fallback_required": True})
         upstream = client.chat.completions.create(
-            model=OPENROUTER_MODEL,
+            model=model_name,
             messages=build_openrouter_messages(history, message, system_prompt),
             temperature=0.7,
             max_tokens=2500,
             stream=True,
         )
     except (OpenAIError, ValueError) as error:
-        app.logger.warning("OpenRouter oqimi ishlamadi; Gemini fallback qo'llanadi (%s).", type(error).__name__)
+        app.logger.warning("OpenRouter oqimi ishlamadi (%s).", type(error).__name__)
         return jsonify({"fallback_required": True})
 
     def generate_events():
@@ -1161,14 +1289,14 @@ def chat_stream():
                 text = chunk.choices[0].delta.content
                 if isinstance(text, str) and text:
                     received_text = True
-                    yield gemini_stream_event("chunk", {"text": text})
+                    yield openrouter_stream_event("chunk", {"text": text})
             if received_text:
-                yield gemini_stream_event("done", {})
+                yield openrouter_stream_event("done", {})
             else:
-                yield gemini_stream_event("error", {"error": "OpenRouter bo'sh javob qaytardi."})
+                yield openrouter_stream_event("error", {"error": "OpenRouter bo'sh javob qaytardi."})
         except OpenAIError as error:
-            app.logger.warning("OpenRouter oqimi uzildi; Gemini fallback qo'llanadi (%s).", type(error).__name__)
-            yield gemini_stream_event(
+            app.logger.warning("OpenRouter oqimi uzildi (%s).", type(error).__name__)
+            yield openrouter_stream_event(
                 "error",
                 {"error": "OpenRouter oqimi uzildi."}
             )
@@ -1205,9 +1333,9 @@ def translate():
     if not isinstance(target, str) or target not in languages:
         return jsonify({"error": "Tarjima tilini tanlang"}), 400
 
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not api_key:
-        return jsonify({"error": "Tarjima uchun serverda Gemini API kaliti sozlanmagan"}), 401
+        return jsonify({"error": "Tarjima uchun serverda OPENROUTER_API_KEY sozlanmagan"}), 401
 
     source_language = "matn tilini avtomatik aniqlang" if source == "auto" else languages[source]
     target_language = languages[target]
@@ -1228,11 +1356,12 @@ def translate():
         if not content:
             translated_chunks.append(chunk)
             continue
-        translation, error = call_gemini_api(
-            api_key,
-            [{"role": "user", "content": content}],
+        translation, error = call_openrouter_api(
+            [],
+            content,
             system_prompt=system_prompt,
             system_prompt_only=True,
+            api_key=api_key,
         )
         if error or translation is None:
             return jsonify({"error": error or "Matnni tarjima qilib bo'lmadi"}), 502
@@ -1247,29 +1376,26 @@ def translate():
 
 @app.route("/api/generate/slide", methods=["POST"])
 def api_generate_slide():
-    data = request.get_json() or {}
-    topic = data.get("topic", "Zamonaviy Axborot Texnologiyalari").strip()
-    result = generator.generate_presentation(topic)
-    return jsonify(result)
+    data = request.get_json(silent=True) or {}
+    topic = data.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        return jsonify({"error": "Taqdimot mavzusini kiriting."}), 400
+    try:
+        return jsonify(generate_academic_presentation(topic.strip(), os.getenv("OPENROUTER_API_KEY", "").strip(), data))
+    except ArtifactGenerationError as error:
+        return jsonify({"error": str(error)}), 502
 
 
 @app.route("/api/generate/document", methods=["POST"])
 def api_generate_document():
-    data = request.get_json() or {}
-    topic = data.get("topic", "Sun'iy intellekt texnologiyalari").strip()
-    subject = data.get("subject", "Axborot Texnologiyalari")
-    student = data.get("student", "Talaba")
-    teacher = data.get("teacher", "O'qituvchi")
-    university = data.get("university", "O'zbekiston Milliy Universiteti")
-
-    result = generator.generate_mustaqil_ish_doc(
-        topic=topic,
-        subject=subject,
-        student=student,
-        teacher=teacher,
-        university=university
-    )
-    return jsonify(result)
+    data = request.get_json(silent=True) or {}
+    topic = data.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        return jsonify({"error": "Mustaqil ish mavzusini kiriting."}), 400
+    try:
+        return jsonify(generate_academic_document(topic.strip(), os.getenv("OPENROUTER_API_KEY", "").strip(), data))
+    except ArtifactGenerationError as error:
+        return jsonify({"error": str(error)}), 502
 
 
 @app.route("/download/<path:filename>")
@@ -1393,25 +1519,24 @@ def delete_conversation(cid):
 
 @app.route("/api/test-key", methods=["POST"])
 def test_key():
-    data = request.get_json() or {}
-    api_key = (os.environ.get("GEMINI_API_KEY") or data.get("api_key", "")).strip()
+    api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not api_key:
-        return jsonify({"valid": False, "error": "Kalit kiritilmagan"}), 400
+        return jsonify({"valid": False, "error": "Server .env faylida OPENROUTER_API_KEY sozlanmagan."}), 400
 
     try:
         r = requests.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
-            headers={"x-goog-api-key": api_key},
+            "https://openrouter.ai/api/v1/key",
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=10
         )
         if r.status_code == 200:
-            return jsonify({"valid": True, "message": "Gemini API kaliti to'g'ri ishlamoqda!"})
+            return jsonify({"valid": True, "message": "OpenRouter API kaliti to'g'ri ishlamoqda!"})
         else:
-            return jsonify({"valid": False, "error": gemini_api_error(r, "Gemini API kaliti")}), 400
+            return jsonify({"valid": False, "error": openrouter_api_error(r, "OpenRouter API kaliti")}), 400
     except requests.RequestException as error:
         return jsonify({
             "valid": False,
-            "error": f"Gemini xizmatiga ulanib bo'lmadi. Server internet/DNS ulanishini tekshiring. ({type(error).__name__})"
+            "error": f"OpenRouter xizmatiga ulanib bo'lmadi. Server internet/DNS ulanishini tekshiring. ({type(error).__name__})"
         }), 502
 
 

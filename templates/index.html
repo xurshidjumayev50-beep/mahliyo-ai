@@ -358,21 +358,9 @@
 
         <div class="modal-body">
           <div class="setting-group">
-            <label for="geminiApiKey">Google Gemini API Kaliti</label>
-            <div class="input-with-action">
-              <input type="password" id="geminiApiKey" placeholder="AIzaSy... (AI bilan suhbat va rasm funksiyalari uchun kerak)">
-              <button type="button" id="toggleApiKeyVisBtn" class="btn-sm-action">Ko'rish</button>
-            </div>
-            <p class="field-hint">
-              AI suhbati, rasm tahlili va rasm/video yaratish uchun Gemini kaliti kerak. Kalitni serverdagi `.env` faylida saqlash uchun maydonni bo'sh qoldiring. Video yaratish Veo modelining mavjudligi, kvotasi va tarifiga bog'liq.
-            </p>
-          </div>
-
-          <div class="setting-group">
-            <label for="modelSelect">Sun'iy intellekt modeli</label>
-            <select id="modelSelect">
-              <option value="gemini-3.5-flash" selected>Gemini 3.5 Flash (Tezkor, sinovdan o'tgan)</option>
-            </select>
+            <label for="openrouterModelInput">OpenRouter modeli</label>
+            <input id="openrouterModelInput" type="text" placeholder="Masalan: openrouter/free" autocomplete="off" spellcheck="false">
+            <p class="field-hint">OpenRouter API kalitini serverdagi `.env` faylida `OPENROUTER_API_KEY` sifatida saqlang. Kalit brauzerda saqlanmaydi. Model slugini OpenRouter katalogidan tanlang.</p>
           </div>
 
           <div class="setting-group">

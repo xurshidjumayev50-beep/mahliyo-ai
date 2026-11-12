@@ -28,5 +28,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Run with Gunicorn WSGI server
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "600", "app:app"]
+# Run FastAPI and mount the existing Flask UI.
+CMD ["uvicorn", "api:api", "--host", "0.0.0.0", "--port", "5000", "--timeout-keep-alive", "600"]

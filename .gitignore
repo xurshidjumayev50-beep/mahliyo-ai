@@ -47,3 +47,4 @@ static/generated/generated_*.webp
 # OS
 .DS_Store
 Thumbs.db
+.venv/
